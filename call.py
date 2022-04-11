@@ -38,7 +38,6 @@ from serial import SerialException
 import board
 import adafruit_veml7700
 
-import string 
 import sys, os
 import time
 from datetime import datetime, timedelta
@@ -133,7 +132,7 @@ def on_message(client, userdata, message):
     print(m_in)
 
 #publish one
-def publish_one(dict):
+def publish_one(dict, client):
     data_out = json.dumps(dict)
     #QOS defines the guarantee of a message being sent. 0 - At most once, 1 - At least once, 2 - Exactly once. The higher the number, the slower the protocol.
     client.publish("sensors/birdhouse1", data_out, qos=1)
@@ -286,58 +285,57 @@ if __name__ == "__main__":
             send_cmd("R") #send commands
             lines = read_lines() #read results
             '''Printing'''
-            if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
-                print("all connected, skipping first pass")
-                pass
-            elif float(lines[0][:5].decode('utf-8')) < -1000: #Checking for erroneous response. throws -1024 degrees whenever disconnected.
-                print("temperature sensor isn't connected.")
-                
-                '''
-                output_json = {#dictionary for file
-                    'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
-                    'lux': str(val),
-                    'birdhouse': 1
-                }
-                try:
-                    publish_one(output_json)
-                except Exception as e:
-                    print(str(e))
-                '''
-                
-                
-                point = Point("birdhouse") \
-                        .tag("bhID", "bh1") \
-                        .field("lux", val) \
-                        .time(datetime.utcnow(), WritePrecision.NS)
-                write_api.write(bucket, org, point)
-                GPIO.output(26, GPIO.HIGH)
-                time.sleep(0.1)
-                GPIO.output(26, GPIO.LOW)
-    
-                
+
+
+            # we're just gonna send lux before trying to do anything temp related.
+            point = Point("birdhouse") \
+                .tag("bhID", "bh1") \
+                .field("lux", val) \
+                .time(datetime.utcnow(), WritePrecision.NS)
+            write_api.write(bucket, org, point)
+
+            print(val)
+
+            try:
+                print(lines[0].decode("utf-8"))
+            except IndexError:
+                print("nothing sent! Not sending temp")
+            except UnicodeDecodeError:
+                print("garbage was sent! Not sending temp")
+
             else:
-                '''
-                output_json = {#dictionary for file
-                    'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
-                    'temp': lines[0][:6].decode('utf-8'), #truncating because it returns '/r' after each reading
-                    'lux': str(val),
-                    'birdhouse': 1
-                }
-                try:
-                    publish_one(output_json)
-                except Exception as e:
-                    print(str(e))
-                '''
-                
-                point = Point("birdhouse") \
-                        .tag("bhID", "bh1") \
-                        .field("lux", val) \
-                        .field("tmp", float(lines[0][:6].decode('utf-8')))\
-                        .time(datetime.utcnow(), WritePrecision.NS)
-                write_api.write(bucket, org, point)
-                GPIO.output(26, GPIO.HIGH)
-                time.sleep(0.1)
-                GPIO.output(26, GPIO.LOW)
+                if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                    print("status message, skipping")
+                elif lines[0][4] == b"-1024": #Checking for erroneous response. throws -1024 degrees whenever disconnected.
+                    print("the thermometer is disconnected")
+                else:
+
+                    #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
+                    #Considering they will independently be sending information
+                    '''
+                    output_json = {#dictionary for file
+                        'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
+                        'temp': lines[0][:6].decode('utf-8'), #truncating because it returns '/r' after each reading
+                        'lux': str(val),
+                        'birdhouse': 1
+                    }
+                    try:
+                        publish_one(output_json)
+                    except Exception as e:
+                        print(str(e))
+                    '''
+                    
+                    point = Point("birdhouse") \
+                            .tag("bhID", "bh1") \
+                            .field("tmp", float(lines[0][:6].decode('utf-8')))\
+                            .time(datetime.utcnow(), WritePrecision.NS)
+                    write_api.write(bucket, org, point)
+
+
+
+            GPIO.output(26, GPIO.HIGH)
+            time.sleep(0.1)
+            GPIO.output(26, GPIO.LOW)
             time.sleep(0.9)
 
     except KeyboardInterrupt:
