@@ -132,7 +132,7 @@ def on_message(client, userdata, message):
     print(m_in)
 
 #publish one
-def publish_one(dict, client):
+def publish_one(dict,client):
     data_out = json.dumps(dict)
     #QOS defines the guarantee of a message being sent. 0 - At most once, 1 - At least once, 2 - Exactly once. The higher the number, the slower the protocol.
     client.publish("sensors/birdhouse1", data_out, qos=1)
@@ -306,8 +306,9 @@ if __name__ == "__main__":
             else:
                 if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
                     print("status message, skipping")
-                elif lines[0][4] == b"-1024": #Checking for erroneous response. throws -1024 degrees whenever disconnected.
-                    print("the thermometer is disconnected")
+                elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees whenever disconnected.
+                                                                      #It throws obscenely hot temps when it's not connected properly
+                    print("the thermometer is disconnected, or connected improperly")
                 else:
 
                     #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
@@ -320,7 +321,7 @@ if __name__ == "__main__":
                         'birdhouse': 1
                     }
                     try:
-                        publish_one(output_json)
+                        publish_one(output_json,client)
                     except Exception as e:
                         print(str(e))
                     '''
