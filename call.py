@@ -3,6 +3,7 @@ Each circle represents an unused pin.
 Each other symbol represents a used one and what it's used by
 
 > - a green LED as an indicator light.
+< - a blue LED as an indicator light
 X - PT-1000 Temperature Sensor
 Z - VEM17700 Lux Sensor
 
@@ -15,7 +16,7 @@ GND             ZX    RXD
                 OX    GND
                 OO
                 OO
-                OO
+                O<    GND
                 OO
                 OO
                 OO
@@ -25,7 +26,7 @@ GND             ZX    RXD
                 OO
                 OO
 GPIO 26         >O
-GND             >O
+GND             ><    GPIO 21
 '''
 
 
@@ -38,6 +39,7 @@ from serial import SerialException
 import board
 import adafruit_veml7700
 
+import string
 import sys, os
 import time
 from datetime import datetime, timedelta
@@ -140,6 +142,16 @@ def publish_one(dict,client):
     time.sleep(0.1)
     GPIO.output(26, GPIO.LOW)
 
+def flash_green():
+    GPIO.output(26, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(26, GPIO.LOW)
+def flash_red():
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(21, GPIO.LOW)
+
+
 if __name__ == "__main__":
 
     #when the program terminates we will clean up GPIO stuff.
@@ -153,9 +165,7 @@ if __name__ == "__main__":
 
     GPIO.setwarnings(False)
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
-
-
-
+    GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
     '''
     Direct way of setting up the VEML7700 lux sensor.
@@ -300,15 +310,20 @@ if __name__ == "__main__":
                 print(lines[0].decode("utf-8"))
             except IndexError:
                 print("nothing sent! Not sending temp")
+                flash_red()
             except UnicodeDecodeError:
                 print("garbage was sent! Not sending temp")
-
+                flash_red()
+            if not str(lines[0][0]).isdigit():
+                print("garbage was sent! Not sending temp")
+                flash_red()
             else:
                 if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
                     print("status message, skipping")
-                elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees whenever disconnected.
-                                                                      #It throws obscenely hot temps when it's not connected properly
+                    flash_red()
+                elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
                     print("the thermometer is disconnected, or connected improperly")
+                    flash_red()
                 else:
 
                     #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
@@ -334,15 +349,10 @@ if __name__ == "__main__":
 
 
 
-            GPIO.output(26, GPIO.HIGH)
-            time.sleep(0.1)
-            GPIO.output(26, GPIO.LOW)
-            time.sleep(0.9)
+            flash_green()
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print("\n\nExiting loop and clearing data")
         ser.flush()
         sys.exit()
-
-
-
