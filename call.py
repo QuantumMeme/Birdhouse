@@ -275,8 +275,13 @@ if __name__ == "__main__":
     org = "david.pesin@gmail.com"
     bucket = "david.pesin's Bucket"
     
-    dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
-    write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+    try:
+        dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
+        write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+    except Exception as e:
+        print(e)
+        for i in range(3):
+            flash_red()
     
     
     try:
@@ -345,7 +350,13 @@ if __name__ == "__main__":
                             .tag("bhID", "bh1") \
                             .field("tmp", float(lines[0][:6].decode('utf-8')))\
                             .time(datetime.utcnow(), WritePrecision.NS)
-                    write_api.write(bucket, org, point)
+                    try:
+                        write_api.write(bucket, org, point)
+                    except Exception as e:
+                        print(e)
+                        for i in range(5):
+                            flash_red()
+                            flash_green()
 
 
 
