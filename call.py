@@ -27,6 +27,8 @@ GND             ZX    RXD
                 OO
 GPIO 26         >O
 GND             ><    GPIO 21
+
+
 '''
 
 
@@ -162,61 +164,23 @@ if __name__ == "__main__":
     GPIO Setup
     '''
 
-
     GPIO.setwarnings(False)
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
-    '''
-    Direct way of setting up the VEML7700 lux sensor.
-    Information gleaned from https://www.vishay.com/docs/84323/designingveml7700.pdf
 
-    This is all through I2C
-    '''
     print("setting up VEML7700 lux sensor...")
-    
-    '''
-    bus = smbus.SMBus(1)
+    veml = False
+    pt1000 = False
 
-    addr = 0x10
-
-    #Write registers
-    als_conf_0 = 0x00
-    als_WH = 0x01
-    als_WL = 0x02
-    pow_sav = 0x03
-
-    #Read registers
-    als = 0x04
-    white = 0x05
-    interrupt = 0x06
-
-
-    # These settings will provide the max range for the sensor (0-120Klx)
-    # but at the lowest precision:
-    #              LSB   MSB
-    confValues = [0x00, 0x13] # 1/8 gain, 25ms IT (Integration Time)
-    #Reference data sheet Table 1 for configuration settings
-
-    interrupt_high = [0x00, 0x00] # Clear values
-    #Reference data sheet Table 2 for High Threshold
-
-    interrupt_low = [0x00, 0x00] # Clear values
-    #Reference data sheet Table 3 for Low Threshold
-
-    power_save_mode = [0x00, 0x00] # Clear values
-    #Reference data sheet Table 4 for Power Saving Modes
-
-    bus.write_i2c_block_data(addr, als_conf_0, confValues)
-    bus.write_i2c_block_data(addr, als_WH, interrupt_high)
-    bus.write_i2c_block_data(addr, als_WL, interrupt_low)
-    bus.write_i2c_block_data(addr, pow_sav, power_save_mode)
-    '''
-
-    # Turns out there's a much easier way to do this with a premade package lol
-    i2c = board.I2C()  # uses board.SCL and board.SDA
-    veml7700 = adafruit_veml7700.VEML7700(i2c)
-    print("done!")
+    try:
+        i2c = board.I2C()  # uses board.SCL and board.SDA
+        veml7700 = adafruit_veml7700.VEML7700(i2c)
+    except Exception as e:
+        print(e)
+    else:
+        veml = True
+        print("done!")
 
     '''
     Setting up the Atlas PT-1000 thermometer through UART.
@@ -231,13 +195,33 @@ if __name__ == "__main__":
     try:
         ser = serial.Serial(uart_addr, 9600, timeout=0)
     except serial.SerialException as e:
-        print( "Error, ", e)
-        sys.exit(0)
-    send_cmd("C,0") #Turn off cont mode
-    time.sleep(1)
-    ser.flush() # Clear prior data
+        print( "Error, \n", e)
+    else:
+        pt1000 = True
+        send_cmd("C,0") #Turn off cont mode
+        time.sleep(1)
+        ser.flush() # Clear prior data
+        print("done!")
 
-    print("done!")
+    # We continue if at least one sensor is working, otherwise what's the point?    
+    if veml and pt1000:
+        print("all connected!")
+        for i in range(3):
+            flash_green()
+    elif veml and not pt1000:
+        print("Temperature not connected")
+        flash_red()
+        flash_red()
+        flash_green()
+    elif not veml and pt1000:
+        print("lux not connected")
+        flash_green()
+        flash_green()
+        flash_red()
+    elif not veml and not pt1000:
+        print("No devices connected. No point in running this.")
+        GPIO.output(21, GPIO.HIGH)
+        sys.exit()
 
 
     '''
@@ -274,14 +258,18 @@ if __name__ == "__main__":
     token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
     org = "david.pesin@gmail.com"
     bucket = "david.pesin's Bucket"
-    
-    try:
-        dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
-        write_api = dbclient.write_api(write_options=SYNCHRONOUS)
-    except Exception as e:
-        print(e)
-        for i in range(3):
-            flash_red()
+
+
+    while True: # keep trying to connect, no point otherwise
+        try:
+            dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
+            write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+        except Exception as e:
+            print(e)
+            for i in range(3):
+                flash_red()
+        else:
+            break
     
     
     try:
@@ -293,24 +281,60 @@ if __name__ == "__main__":
             #Reference www.vishay.com/docs/84323/designingveml7700.pdf
             # 'Calculating the LUX Level'       
             #val = round(word * gain,3) # LUX VALUE
+            try:
+                val = veml7700.light #easier lux value
+            except Exception as e:
+                print(e)
+                veml = False
+            
+            #if it disconnects midway then we can try to do it again?
+            if not veml:
+                try:
+                    i2c = board.I2C()  # uses board.SCL and board.SDA
+                    veml7700 = adafruit_veml7700.VEML7700(i2c)
+                except Exception as e:
+                    print(e)
+                else:
+                    veml = True
 
-            val = veml7700.light #easier lux value
-
-            '''temp'''
-            send_cmd("R") #send commands
-            lines = read_lines() #read results
-            '''Printing'''
-
+            print("done!")
 
             # we're just gonna send lux before trying to do anything temp related.
-            point = Point("birdhouse") \
-                .tag("bhID", "bh1") \
-                .field("lux", val) \
-                .time(datetime.utcnow(), WritePrecision.NS)
-            write_api.write(bucket, org, point)
+            if veml:
+                point = Point("birdhouse") \
+                    .tag("bhID", "bh1") \
+                    .field("lux", val) \
+                    .time(datetime.utcnow(), WritePrecision.NS)
+                write_api.write(bucket, org, point)
+                flash_green()
+            else:
+                flash_red()
 
             print(val)
 
+
+            '''temp'''
+            try:
+                send_cmd("R") #send commands
+                lines = read_lines() #read results
+            except Exception as e:
+                print(e)
+                pt1000 = False 
+            
+            if not pt1000: # this might be fruitless lol its probably not a serial issue
+                    try:
+                        ser = serial.Serial(uart_addr, 9600, timeout=0)
+                    except serial.SerialException as e:
+                        print( "Error, \n", e)
+                    else:
+                        pt1000 = True
+                        send_cmd("C,0") #Turn off cont mode
+                        time.sleep(1)
+                        ser.flush() # Clear prior data
+                        print("done!")
+                    
+
+            #Checking results and sending temp
             try:
                 print(lines[0].decode("utf-8"))
             except IndexError:
@@ -345,22 +369,22 @@ if __name__ == "__main__":
                     except Exception as e:
                         print(str(e))
                     '''
-                    
-                    point = Point("birdhouse") \
-                            .tag("bhID", "bh1") \
-                            .field("tmp", float(lines[0][:6].decode('utf-8')))\
-                            .time(datetime.utcnow(), WritePrecision.NS)
-                    try:
-                        write_api.write(bucket, org, point)
-                    except Exception as e:
-                        print(e)
-                        for i in range(5):
-                            flash_red()
+                    if pt1000:
+                        point = Point("birdhouse") \
+                                .tag("bhID", "bh1") \
+                                .field("tmp", float(lines[0][:6].decode('utf-8')))\
+                                .time(datetime.utcnow(), WritePrecision.NS)
+                        try:
+                            write_api.write(bucket, org, point)
+                        except Exception as e:
+                            print(e)
+                            for i in range(5):
+                                flash_red()
+                        else:
                             flash_green()
-
-
-
-            flash_green()
+                    
+                    else:
+                        flash_red()
             time.sleep(1)
 
     except KeyboardInterrupt:
