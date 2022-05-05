@@ -284,6 +284,7 @@ if __name__ == "__main__":
             try:
                 val = veml7700.light #easier lux value
             except Exception as e:
+                print("failed val assignment")
                 print(e)
                 veml = False
             
@@ -293,6 +294,7 @@ if __name__ == "__main__":
                     i2c = board.I2C()  # uses board.SCL and board.SDA
                     veml7700 = adafruit_veml7700.VEML7700(i2c)
                 except Exception as e:
+                    print("failed restart")
                     print(e)
                 else:
                     veml = True
@@ -309,8 +311,8 @@ if __name__ == "__main__":
                 flash_green()
             else:
                 flash_red()
-
-            print(val)
+            if veml:
+                print(val)
 
 
             '''temp'''
