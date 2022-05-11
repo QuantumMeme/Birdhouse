@@ -41,7 +41,7 @@ from serial import SerialException
 import board
 import adafruit_veml7700
 
-import string
+#import string
 import sys, os
 import time
 from datetime import datetime, timedelta
@@ -50,8 +50,8 @@ import atexit
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-import paho.mqtt.client as mqtt
-import paho.mqtt.publish as publish
+#import paho.mqtt.client as mqtt
+#import paho.mqtt.publish as publish
 import json
 import socket
 
@@ -144,6 +144,7 @@ def publish_one(dict,client):
     time.sleep(0.1)
     GPIO.output(26, GPIO.LOW)
 
+# You can change the GPIO pins if you want for the LEDs, it's just a matter of convenience
 def flash_green():
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
