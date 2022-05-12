@@ -144,15 +144,18 @@ def publish_one(dict,client):
     time.sleep(0.1)
     GPIO.output(26, GPIO.LOW)
 
+# Functions for LEDs
 # You can change the GPIO pins if you want for the LEDs, it's just a matter of convenience
 def flash_green():
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
     GPIO.output(26, GPIO.LOW)
+    time.sleep(0.1)
 def flash_red():
     GPIO.output(21, GPIO.HIGH)
     time.sleep(0.1)
     GPIO.output(21, GPIO.LOW)
+    time.sleep(0.1)
 
 
 if __name__ == "__main__":
@@ -169,16 +172,19 @@ if __name__ == "__main__":
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
-
-    print("setting up VEML7700 lux sensor...")
+    #variables will change depending on if the device is on
     veml = False
     pt1000 = False
+
+
+
+    print("setting up VEML7700 lux sensor...")
 
     try:
         i2c = board.I2C()  # uses board.SCL and board.SDA
         veml7700 = adafruit_veml7700.VEML7700(i2c)
-    except Exception as e:
-        print(e)
+    except Exception as e: #VEML doesn't work
+        print("Error, \n", e)
     else:
         veml = True
         print("done!")
@@ -270,6 +276,8 @@ if __name__ == "__main__":
             for i in range(3):
                 flash_red()
         else:
+            for i in range(3):
+                flash_green()
             break
     
     
@@ -282,6 +290,10 @@ if __name__ == "__main__":
             #Reference www.vishay.com/docs/84323/designingveml7700.pdf
             # 'Calculating the LUX Level'       
             #val = round(word * gain,3) # LUX VALUE
+
+
+
+            # Try to get data, if fails change "veml" variable
             try:
                 val = veml7700.light #easier lux value
             except Exception as e:
@@ -300,8 +312,6 @@ if __name__ == "__main__":
                 else:
                     veml = True
 
-            print("done!")
-
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
                 point = Point("birdhouse") \
@@ -310,19 +320,14 @@ if __name__ == "__main__":
                     .time(datetime.utcnow(), WritePrecision.NS)
                 write_api.write(bucket, org, point)
                 flash_green()
-            else:
-                flash_red()
-            if veml:
                 print(val)
+            else: #lux sensor isn't working, we aren't sending anything
+                flash_red()
 
 
             '''temp'''
-            try:
-                send_cmd("R") #send commands
-                lines = read_lines() #read results
-            except Exception as e:
-                print(e)
-                pt1000 = False 
+
+            # Send "read" command to the pt-1000
             
             if not pt1000: # this might be fruitless lol its probably not a serial issue
                     try:
@@ -336,58 +341,77 @@ if __name__ == "__main__":
                         ser.flush() # Clear prior data
                         print("done!")
                     
+            try:
+                send_cmd("R") #send commands
+                lines = read_lines() #read results
+            except Exception as e:
+                print(e)
+                pt1000 = False 
 
             #Checking results and sending temp
-            try:
-                print(lines[0].decode("utf-8"))
-            except IndexError:
-                print("nothing sent! Not sending temp")
-                flash_red()
-            except UnicodeDecodeError:
-                print("garbage was sent! Not sending temp")
-                flash_red()
-            if not str(lines[0][0]).isdigit():
-                print("garbage was sent! Not sending temp")
-                flash_red()
-            else:
-                if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
-                    print("status message, skipping")
+            if pt1000:
+                try:
+                    print(lines[0].decode("utf-8"))
+                except IndexError: #Nothing was sent
+                    print("nothing sent! Not sending temp")
                     flash_red()
-                elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-                    print("the thermometer is disconnected, or connected improperly")
+                except UnicodeDecodeError: #What was sent isn't decodable
+                    print("garbage was sent! Not sending temp")
+                    flash_red()
+                if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
+                    print("garbage was sent! Not sending temp")
                     flash_red()
                 else:
-
-                    #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
-                    #Considering they will independently be sending information
-                    '''
-                    output_json = {#dictionary for file
-                        'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
-                        'temp': lines[0][:6].decode('utf-8'), #truncating because it returns '/r' after each reading
-                        'lux': str(val),
-                        'birdhouse': 1
-                    }
-                    try:
-                        publish_one(output_json,client)
-                    except Exception as e:
-                        print(str(e))
-                    '''
-                    if pt1000:
-                        point = Point("birdhouse") \
-                                .tag("bhID", "bh1") \
-                                .field("tmp", float(lines[0][:6].decode('utf-8')))\
-                                .time(datetime.utcnow(), WritePrecision.NS)
-                        try:
-                            write_api.write(bucket, org, point)
-                        except Exception as e:
-                            print(e)
-                            for i in range(5):
-                                flash_red()
-                        else:
-                            flash_green()
-                    
-                    else:
+                    if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                        print("status message, skipping")
                         flash_red()
+                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                        print("the thermometer is disconnected, or connected improperly")
+                        flash_red()
+                    else:
+
+                        #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
+                        #Considering they will independently be sending information
+                        '''
+                        output_json = {#dictionary for file
+                            'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
+                            'temp': lines[0][:6].decode('utf-8'), #truncating because it returns '/r' after each reading
+                            'lux': str(val),
+                            'birdhouse': 1
+                        }
+                        try:
+                            publish_one(output_json,client)
+                        except Exception as e:
+                            print(str(e))
+                        '''
+                        if pt1000: # Check again I guess?
+                            point = Point("birdhouse") \
+                                    .tag("bhID", "bh1") \
+                                    .field("tmp", float(lines[0][:6].decode('utf-8')))\
+                                    .time(datetime.utcnow(), WritePrecision.NS)
+                            try:
+                                write_api.write(bucket, org, point)
+                            except Exception as e:
+                                print(e)
+                                for i in range(4):
+                                    flash_red()
+                            else:
+                                flash_green()
+                        
+                        else:
+                            flash_red()
+            else: # try to connect to the thermometer again
+                try:
+                    ser = serial.Serial(uart_addr, 9600, timeout=0)
+                except serial.SerialException as e:
+                    print( "Error, \n", e)
+                else:
+                    pt1000 = True
+                    send_cmd("C,0") #Turn off cont mode
+                    time.sleep(1)
+                    ser.flush() # Clear prior data
+                    print("done!")
+
             time.sleep(1)
 
     except KeyboardInterrupt:
