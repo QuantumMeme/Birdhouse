@@ -2,10 +2,21 @@
 Each circle represents an unused pin.
 Each other symbol represents a used one and what it's used by
 
+Use this as a reference: https://pinout.xyz/
+
 > - a green LED as an indicator light.
 < - a blue LED as an indicator light
 X - PT-1000 Temperature Sensor
-Z - VEM17700 Lux Sensor
+    TX -> RXD
+    RX -> TXD
+    VCC -> 5V
+    GND -> GND
+Z - VEML7700 Lux Sensor
+    VID -> 3V3
+    3o3 -> nothing
+    GND -> GND
+    SDA -> SDA
+    SCL -> SCL
 
 3V3 power       ZX    5V power
 SDA             ZO
