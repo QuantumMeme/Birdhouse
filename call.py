@@ -132,13 +132,13 @@ def read_lines(pt1000):
 def flash_green(stayOn = 0): 
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
-    if stayOn > 0:
+    if stayOn == 0:
         GPIO.output(26, GPIO.LOW)
         time.sleep(0.1)
 def flash_red(stayOn = 0):
     GPIO.output(21, GPIO.HIGH)
     time.sleep(0.1)
-    if stayOn > 0:
+    if stayOn == 0:
         GPIO.output(21, GPIO.LOW)
         time.sleep(0.1)
 
@@ -205,7 +205,7 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         print( "Error, \n", e)
     else:
         pt1000 = True
-        send_cmd("C,0") #Turn off cont mode
+        send_cmd("C,0", ser) #Turn off cont mode
         time.sleep(1)
         ser.flush() # Clear prior data
         print("done!")
