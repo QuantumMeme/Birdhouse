@@ -46,7 +46,7 @@ GND             ><    GPIO 21
 
 
 #communication
-import smbus
+from json import load
 import serial
 from serial import SerialException
 import board
@@ -61,19 +61,24 @@ import atexit
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-#import paho.mqtt.client as mqtt
-#import paho.mqtt.publish as publish
-import json
-import socket
-
 import RPi.GPIO as GPIO
-def clean():
-    print("gpio cleaned")
+
+
+
+#global flags
+veml = False
+pt1000 = False
+birdhouseID = "bh1" #change for different point on influx
+
+
+def clean(serial): # this is defined for atExit(.
     GPIO.cleanup()
+    print("GPIO unallocated")
+    serial.flush()
 
 # following functions are taken straight from AtlasScientific's github repo. Same for their UART implementation
 # https://github.com/AtlasScientific/Raspberry-Pi-sample-code 
-def send_cmd(cmd):
+def send_cmd(cmd, ser):
 	"""
 	Send command to the Atlas Sensor.
 	Before sending, add Carriage Return at the end of the command.
@@ -87,7 +92,7 @@ def send_cmd(cmd):
 	except SerialException as e:
 		print ("Error, ", e)
 		return None
-def read_line():
+def read_line(ser):
 	"""
 	taken from the ftdi library and modified to 
 	use the ezo line separator "\r"
@@ -103,14 +108,14 @@ def read_line():
 				line_buffer[-lsl:] == [b'\r']):
 			break
 	return b''.join(line_buffer)
-def read_lines():
+def read_lines(pt1000):
 	"""
 	also taken from ftdi lib to work with modified readline function
 	"""
 	lines = []
 	try:
 		while True:
-			line = read_line()
+			line = read_line(pt1000)
 			if not line:
 				break
 				ser.flush_input()
@@ -122,94 +127,77 @@ def read_lines():
 		return None	
 
 
-#The following functions are all for MQTT.
-
-# The callback for when the client receives a CONNACK response from the server.
-def on_connect(client, userdata, flags, rc):
-    print("\nConnected with result code "+str(rc))
-    
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    print("Subscribing to topic \"sensors/birdhouse1\"")
-    client.subscribe("sensors/birdhouse1")
-
-# The callback for when a PUBLISH message is received from the server.
-def on_message(client, userdata, message):
-    # most will not have messages this is just for testing
-    print("\nMessage received")
-    print("topic =", message.topic)
-    m_decode=message.payload.decode("utf-8","ignore")
-    #print("data Received",m_decode)
-    
-    print("Converting from Json to Object")
-    m_in=json.loads(m_decode)
-
-    print(m_in)
-
-#publish one
-def publish_one(dict,client):
-    data_out = json.dumps(dict)
-    #QOS defines the guarantee of a message being sent. 0 - At most once, 1 - At least once, 2 - Exactly once. The higher the number, the slower the protocol.
-    client.publish("sensors/birdhouse1", data_out, qos=1)
+# You can change the GPIO pins if you want for the LEDs
+def flash_green(stayOn = 0): 
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
-    GPIO.output(26, GPIO.LOW)
-
-# Functions for LEDs
-# You can change the GPIO pins if you want for the LEDs, it's just a matter of convenience
-def flash_green():
-    GPIO.output(26, GPIO.HIGH)
-    time.sleep(0.1)
-    GPIO.output(26, GPIO.LOW)
-    time.sleep(0.1)
-def flash_red():
+    if stayOn > 0:
+        GPIO.output(26, GPIO.LOW)
+        time.sleep(0.1)
+def flash_red(stayOn = 0):
     GPIO.output(21, GPIO.HIGH)
     time.sleep(0.1)
-    GPIO.output(21, GPIO.LOW)
-    time.sleep(0.1)
+    if stayOn > 0:
+        GPIO.output(21, GPIO.LOW)
+        time.sleep(0.1)
 
+#InfluxDB definitions
 
-if __name__ == "__main__":
+token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
+org = "david.pesin@gmail.com"
+bucket = "david.pesin's Bucket"
 
-    #when the program terminates we will clean up GPIO stuff.
-    atexit.register(clean)
+def sendLux(influx_client, value): # Sending lux 
+    point = Point("birdhouse") \
+        .tag("bhID", birdhouseID) \
+        .field("lux", value) \
+        .time(datetime.utcnow(), WritePrecision.NS)
+    try: 
+        influx_client.write(bucket, org, point)
+    except Exception as e:
+        print(e)
+        for i in range(4):
+            flash_red()
+    else:
+        flash_green()
+        print(value)
 
+def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the period) of the bytes received.
 
-    '''
-    GPIO Setup
-    '''
+    val = float(valueBytes[0][:6].decode('utf-8'))
 
-    GPIO.setwarnings(False)
-    GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
-    GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
-
-    #variables will change depending on if the device is on
-    veml = False
-    pt1000 = False
-
-
-
-    print("setting up VEML7700 lux sensor...")
-
+    point = Point("birdhouse") \
+            .tag("bhID", birdhouseID) \
+            .field("tmp", val)\
+            .time(datetime.utcnow(), WritePrecision.NS)
     try:
-        i2c = board.I2C()  # uses board.SCL and board.SDA
-        veml7700 = adafruit_veml7700.VEML7700(i2c)
-    except Exception as e: #VEML doesn't work
-        print("Error, \n", e)
+        influx_client.write(bucket, org, point)
+    except Exception as e:
+        print(e)
+        for i in range(4):
+            flash_red()
+    else:
+        flash_green()
+        print(val)
+
+# Hardware setup functions
+
+def loadVEML(): # returning the veml object to be able to get data from it later
+    global veml
+    try:
+        i2c = board.I2C()  # uses board.SCL and board.SDA -- This won't throw any error, it's just using constants 'board' has stored
+        obj = adafruit_veml7700.VEML7700(i2c)
+    except RuntimeError:
+        print("Unable to enable VEML7700")
+    except Exception as e: # This is SUPER bad practice, just to catch stuff during testing to find out what exceptions can be thrown
+        print("Unknown Error, \n", e)
     else:
         veml = True
         print("done!")
+        return obj
 
-    '''
-    Setting up the Atlas PT-1000 thermometer through UART.
-    TX/RX is '/dev/ttyS0' and it will be defined as such
-    '''
-
-    print("Connecting AtlasScientific PT-1000...")
-
-    uart_addr = '/dev/ttyS0'
-
-    #Try to connect to the serial port. This shouldn't fail and if it does it's a hardware issue at this point.
+def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the temperature probe. Defaulting to the tx/rx pins, can change according to your needs though
+    global pt1000
     try:
         ser = serial.Serial(uart_addr, 9600, timeout=0)
     except serial.SerialException as e:
@@ -220,6 +208,33 @@ if __name__ == "__main__":
         time.sleep(1)
         ser.flush() # Clear prior data
         print("done!")
+        return ser
+
+def main():
+    global veml, pt1000
+    #when the program terminates we will clean up GPIO stuff.
+    atexit.register(clean)
+
+    #GPIO setup
+    GPIO.setwarnings(False)
+    GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
+    GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
+
+    #variables will change depending on if the device is on
+
+    print("setting up VEML7700 lux sensor...")
+
+    veml7700 = loadVEML()
+
+    '''
+    Setting up the Atlas PT-1000 thermometer through UART.
+    TX/RX is '/dev/ttyS0' and it will be defined as such
+    '''
+
+    print("Connecting AtlasScientific PT-1000...")
+
+    #Try to connect to the serial port. This shouldn't fail and if it does, check your physical connections
+    ser = loadPT1000()
 
     # We continue if at least one sensor is working, otherwise what's the point?    
     if veml and pt1000:
@@ -238,46 +253,12 @@ if __name__ == "__main__":
         flash_red()
     elif not veml and not pt1000:
         print("No devices connected. No point in running this.")
-        GPIO.output(21, GPIO.HIGH)
+        flash_red(1)
         sys.exit()
-
-
-    '''
-    MQTT Setup
-    '''
-    
-    '''
-    hn = socket.gethostname()
-    port = 1883 #This is an unsecured port with no TLS, but we really don't care
-
-    print("creating new instance of client")
-    client = mqtt.Client(client_id="Birdhouse_1")
-
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-
-    while True:
-        try:
-            client.connect(hn, port)
-        except Exception as e:
-            print(e)
-        else:
-            break
-
-    print("Loop start")
-    client.loop_start() #creates a thread for mqtt to run off of seperate to the calling thread that the rest of the code is running on.
-    '''
     
     '''
     InfluxDB setup
     '''
-    
-    token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
-    org = "david.pesin@gmail.com"
-    bucket = "david.pesin's Bucket"
-
-
     while True: # keep trying to connect, no point otherwise
         try:
             dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
@@ -295,43 +276,20 @@ if __name__ == "__main__":
     try:
         while True:
             '''lux'''
-            #word = bus.read_word_data(addr,als)
-            
-            #gain = 1.8432 #Gain for 1/8 gain & 25ms IT
-            #Reference www.vishay.com/docs/84323/designingveml7700.pdf
-            # 'Calculating the LUX Level'       
-            #val = round(word * gain,3) # LUX VALUE
-
-
-
             # Try to get data, if fails change "veml" variable
             try:
                 val = veml7700.light #easier lux value
             except Exception as e:
-                print("failed val assignment")
-                print(e)
+                print("failed val assignment:\n ", e)
                 veml = False
             
             #if it disconnects midway then we can try to do it again?
             if not veml:
-                try:
-                    i2c = board.I2C()  # uses board.SCL and board.SDA
-                    veml7700 = adafruit_veml7700.VEML7700(i2c)
-                except Exception as e:
-                    print("failed restart")
-                    print(e)
-                else:
-                    veml = True
+                veml7700 = loadVEML()
 
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
-                point = Point("birdhouse") \
-                    .tag("bhID", "bh1") \
-                    .field("lux", val) \
-                    .time(datetime.utcnow(), WritePrecision.NS)
-                write_api.write(bucket, org, point)
-                flash_green()
-                print(val)
+                sendLux(write_api, val)
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
 
@@ -340,22 +298,12 @@ if __name__ == "__main__":
 
             # Send "read" command to the pt-1000
             
-            if not pt1000: # this might be fruitless lol its probably not a serial issue
-                    try:
-                        ser = serial.Serial(uart_addr, 9600, timeout=0)
-                    except serial.SerialException as e:
-                        print( "Error, \n", e)
-                    else:
-                        pt1000 = True
-                        send_cmd("C,0") #Turn off cont mode
-                        time.sleep(1)
-                        ser.flush() # Clear prior data
-                        print("done!")
-                    
+            if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
+                ser = loadPT1000()            
             try:
-                send_cmd("R") #send commands
-                lines = read_lines() #read results
-            except Exception as e:
+                send_cmd("R", ser) #send commands
+                lines = read_lines(ser) #read results
+            except Exception as e: # probably SerialException but unsure if that's the only one. Need to keep testing
                 print(e)
                 pt1000 = False 
 
@@ -364,64 +312,26 @@ if __name__ == "__main__":
                 try:
                     print(lines[0].decode("utf-8"))
                 except IndexError: #Nothing was sent
-                    print("nothing sent! Not sending temp")
+                    print("nothing sent; Not sending temp")
                     flash_red()
                 except UnicodeDecodeError: #What was sent isn't decodable
-                    print("garbage was sent! Not sending temp")
+                    print("cannot decode data; Not sending temp")
                     flash_red()
                 if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
-                    print("garbage was sent! Not sending temp")
+                    print("expected float but got string; Not sending temp")
                     flash_red()
                 else:
                     if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
                         print("status message, skipping")
                         flash_red()
-                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 70: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
                         print("the thermometer is disconnected, or connected improperly")
                         flash_red()
                     else:
+                        sendTemp(write_api, lines)
 
-                        #The MQTT portion will be redone once we have a bunch of sensors, but honestly we probably wont need MQTT
-                        #Considering they will independently be sending information
-                        '''
-                        output_json = {#dictionary for file
-                            'utc': str(datetime.utcnow() - timedelta(hours=4)), #getting utc into our timezone 
-                            'temp': lines[0][:6].decode('utf-8'), #truncating because it returns '/r' after each reading
-                            'lux': str(val),
-                            'birdhouse': 1
-                        }
-                        try:
-                            publish_one(output_json,client)
-                        except Exception as e:
-                            print(str(e))
-                        '''
-                        if pt1000: # Check again I guess?
-                            point = Point("birdhouse") \
-                                    .tag("bhID", "bh1") \
-                                    .field("tmp", float(lines[0][:6].decode('utf-8')))\
-                                    .time(datetime.utcnow(), WritePrecision.NS)
-                            try:
-                                write_api.write(bucket, org, point)
-                            except Exception as e:
-                                print(e)
-                                for i in range(4):
-                                    flash_red()
-                            else:
-                                flash_green()
-                        
-                        else:
-                            flash_red()
             else: # try to connect to the thermometer again
-                try:
-                    ser = serial.Serial(uart_addr, 9600, timeout=0)
-                except serial.SerialException as e:
-                    print( "Error, \n", e)
-                else:
-                    pt1000 = True
-                    send_cmd("C,0") #Turn off cont mode
-                    time.sleep(1)
-                    ser.flush() # Clear prior data
-                    print("done!")
+                ser = loadPT1000()
 
             time.sleep(1)
 
@@ -429,3 +339,7 @@ if __name__ == "__main__":
         print("\n\nExiting loop and clearing data")
         ser.flush()
         sys.exit()
+
+
+if __name__ == "__main__":
+    main()
