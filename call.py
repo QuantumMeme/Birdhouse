@@ -318,14 +318,14 @@ def main():
                 except UnicodeDecodeError: #What was sent isn't decodable
                     print("cannot decode data; Not sending temp")
                     flash_red()
-                if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
-                    print("expected float but got string; Not sending temp")
-                    flash_red()
                 else:
                     try:
                         lines[0].decode("utf-8")
                     except UnicodeDecodeError:
                         print("garbage was sent and cannot be decoded!")
+                    if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
+                        print("expected float but got string; Not sending temp")
+                        flash_red()
                     else:
                         if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
                             print("status message, skipping")
