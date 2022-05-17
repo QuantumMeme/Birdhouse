@@ -179,7 +179,7 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
             flash_red()
     else:
         flash_green()
-        print(val)
+        #print(val)
 
 # Hardware setup functions
 
@@ -322,14 +322,19 @@ def main():
                     print("expected float but got string; Not sending temp")
                     flash_red()
                 else:
-                    if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
-                        print("status message, skipping")
-                        flash_red()
-                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-                        print("the thermometer is disconnected, or connected improperly")
-                        flash_red()
+                    try:
+                        lines.decode("utf-8")
+                    except UnicodeDecodeError:
+                        print("garbage was sent and cannot be decoded!")
                     else:
-                        sendTemp(write_api, lines)
+                        if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                            print("status message, skipping")
+                            flash_red()
+                        elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                            print("the thermometer is disconnected, or connected improperly")
+                            flash_red()
+                        else:
+                            sendTemp(write_api, lines)
 
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
