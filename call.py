@@ -323,7 +323,7 @@ def main():
                     flash_red()
                 else:
                     try:
-                        lines.decode("utf-8")
+                        lines[0].decode("utf-8")
                     except UnicodeDecodeError:
                         print("garbage was sent and cannot be decoded!")
                     else:
