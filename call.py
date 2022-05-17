@@ -71,7 +71,7 @@ pt1000 = False
 birdhouseID = "bh1" #change for different point on influx
 
 
-def clean(serial): # this is defined for atExit(.
+def clean(serial): # this is defined for atExit.
     GPIO.cleanup()
     print("GPIO unallocated")
     serial.flush()
@@ -128,6 +128,7 @@ def read_lines(pt1000):
 
 
 # You can change the GPIO pins if you want for the LEDs
+# https://pinout.xyz/ to help you out there.
 def flash_green(stayOn = 0): 
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
