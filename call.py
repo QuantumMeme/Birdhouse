@@ -132,13 +132,13 @@ def read_lines(pt1000):
 def flash_green(stayOn = 0): 
     GPIO.output(26, GPIO.HIGH)
     time.sleep(0.1)
-    if stayOn > 0:
+    if stayOn == 0:
         GPIO.output(26, GPIO.LOW)
         time.sleep(0.1)
 def flash_red(stayOn = 0):
     GPIO.output(21, GPIO.HIGH)
     time.sleep(0.1)
-    if stayOn > 0:
+    if stayOn == 0:
         GPIO.output(21, GPIO.LOW)
         time.sleep(0.1)
 
@@ -179,7 +179,7 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
             flash_red()
     else:
         flash_green()
-        print(val)
+        #print(val)
 
 # Hardware setup functions
 
@@ -205,7 +205,7 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         print( "Error, \n", e)
     else:
         pt1000 = True
-        send_cmd("C,0") #Turn off cont mode
+        send_cmd("C,0", ser) #Turn off cont mode
         time.sleep(1)
         ser.flush() # Clear prior data
         print("done!")
@@ -318,18 +318,23 @@ def main():
                 except UnicodeDecodeError: #What was sent isn't decodable
                     print("cannot decode data; Not sending temp")
                     flash_red()
-                if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
-                    print("expected float but got string; Not sending temp")
-                    flash_red()
                 else:
-                    if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
-                        print("status message, skipping")
-                        flash_red()
-                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-                        print("the thermometer is disconnected, or connected improperly")
+                    try:
+                        lines[0].decode("utf-8")
+                    except UnicodeDecodeError:
+                        print("garbage was sent and cannot be decoded!")
+                    if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
+                        print("expected float but got string; Not sending temp")
                         flash_red()
                     else:
-                        sendTemp(write_api, lines)
+                        if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                            print("status message, skipping")
+                            flash_red()
+                        elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                            print("the thermometer is disconnected, or connected improperly")
+                            flash_red()
+                        else:
+                            sendTemp(write_api, lines)
 
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
