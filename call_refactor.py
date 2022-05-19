@@ -217,7 +217,7 @@ def load_temp_sensor(temp_sensor_bool, uart_address='/dev/ttyS0'):
         print("Error, \n", e)
     else:
         temp_sensor_bool = True
-        send_cmd("C,0")  # Turn off cont mode
+        send_cmd("C,0", temp_sensor_serial)  # Turn off cont mode
         time.sleep(1)
         temp_sensor_serial.flush()  # Clear prior data
         print("done!")

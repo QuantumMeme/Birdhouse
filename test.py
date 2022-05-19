@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 import sys
 
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,8 @@ from unittest.mock import MagicMock, patch
 # mock imports
 sys.modules['board'] = MagicMock()
 sys.modules['adafruit_veml7700'] = MagicMock()
+sys.modules['serial'] = MagicMock()
+sys.modules['serial.SerialException'] = MagicMock()
 sys.modules['influxdb_client'] = MagicMock()
 sys.modules['influxdb_client.InfluxDBClient'] = MagicMock()
 sys.modules['influxdb_client.Point'] = MagicMock()
@@ -42,7 +45,7 @@ class Testing(unittest.TestCase):
         def test_temp_setup(self):
             temp_sensor_bool_test = False
             # this should work with the mock
-            temp_sensor_serial, temp_sensor_bool = call_refactor.load_temp_sensor(temp_sensor_bool_test)
+            temp_sensor_serial, temp_sensor_bool = call_refactor.load_temp_sensor(temp_sensor_bool_test, 'test')
             self.assertTrue(temp_sensor_serial, msg="temp_sensor_serial false")
             self.assertTrue(temp_sensor_bool, msg="temp_sensor_bool false")
 
