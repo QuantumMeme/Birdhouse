@@ -251,20 +251,15 @@ def collect_lux_data(lux_sensor, write_api, lux_sensor_bool):
     lux_value = None
     lux_sent_bool = False
 
+    # If sensor disconnects midway try again
+    if not lux_sensor_bool:
+        lux_sensor = load_lux_sensor(lux_sensor_bool)
+
     try:
         lux_value = lux_sensor.light  # easier lux value
     except Exception as e:
         print("failed val assignment:\n ", e)
         lux_sensor_bool = False
-
-    # If sensor disconnects midway try again
-    if not lux_sensor_bool:
-        lux_sensor = load_lux_sensor(lux_sensor_bool)
-        try:
-            lux_value = lux_sensor.light  # easier lux value
-        except Exception as e:
-            print("failed val assignment:\n ", e)
-            lux_sensor_bool = False
 
     # send lux data before attempting temperature data
     if lux_sensor_bool and lux_value:
@@ -275,7 +270,54 @@ def collect_lux_data(lux_sensor, write_api, lux_sensor_bool):
         # TODO: if saving values locally, do that here
         flash_red()
 
-    return lux_sent_bool, lux_sensor_bool
+    return lux_sent_bool, lux_sensor_bool, lux_sensor
+
+
+def collect_temp_data(temp_sensor_serial, write_api, temp_sensor_bool):
+    temp_sent_bool = False
+    lines = 'not set'
+    # This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
+    if not temp_sensor_bool:
+        temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
+    try:
+        send_cmd("R", temp_sensor_serial)  # send commands
+        lines = read_lines(temp_sensor_serial)  # read results
+    except Exception as e:  # probably SerialException but unsure if that's the only one. Need to keep testing
+        print(e)
+        temp_sensor_bool = False
+
+        # Checking results and sending temp
+    if temp_sensor_bool:
+        try:
+            print(lines[0].decode("utf-8"))
+        except IndexError:  # Nothing was sent
+            print("nothing sent; Not sending temp")
+            flash_red()
+        except UnicodeDecodeError:  # What was sent isn't decodable
+            print("cannot decode data; Not sending temp")
+            flash_red()
+        if not str(lines[0][0]).isdigit():  # What was sent isn't a number.
+            print("expected float but got string; Not sending temp")
+            flash_red()
+        else:
+            # Checking for status messages, sometimes the first message is going to be one.
+            if lines[0][0] == b'*'[0]:
+                print("status message, skipping")
+                flash_red()
+            # Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+            elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode(
+                    "utf-8")) > 100:
+                print("the thermometer is disconnected, or connected improperly")
+                flash_red()
+            else:
+                send_temp(write_api, lines)
+
+    else:  # try to connect to the thermometer again
+        temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
+
+    time.sleep(1)
+
+    return temp_sent_bool, temp_sensor_bool, temp_sensor_serial
 
 
 def main():
@@ -334,52 +376,12 @@ def main():
         while True:
             '''lux'''
             # get data from lux sensor and send to influxDB
-            lux_sent_bool, lux_sensor_bool = collect_lux_data(lux_sensor, write_api, lux_sensor_bool)
+            lux_sent_bool, lux_sensor_bool, lux_sensor = collect_lux_data(lux_sensor, write_api, lux_sensor_bool)
 
             '''temperature'''
-
-            # Send "read" command to the pt-1000 temperature sensor
-
-            # This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
-            if not temp_sensor_bool:
-                temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
-            try:
-                send_cmd("R", temp_sensor_serial)  # send commands
-                lines = read_lines(temp_sensor_serial)  # read results
-            except Exception as e:  # probably SerialException but unsure if that's the only one. Need to keep testing
-                print(e)
-                temp_sensor_bool = False
-
-                # Checking results and sending temp
-            if temp_sensor_bool:
-                try:
-                    print(lines[0].decode("utf-8"))
-                except IndexError:  # Nothing was sent
-                    print("nothing sent; Not sending temp")
-                    flash_red()
-                except UnicodeDecodeError:  # What was sent isn't decodable
-                    print("cannot decode data; Not sending temp")
-                    flash_red()
-                if not str(lines[0][0]).isdigit():  # What was sent isn't a number.
-                    print("expected float but got string; Not sending temp")
-                    flash_red()
-                else:
-                    # Checking for status messages, sometimes the first message is going to be one.
-                    if lines[0][0] == b'*'[0]:
-                        print("status message, skipping")
-                        flash_red()
-                    # Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-                    elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode(
-                            "utf-8")) > 100:
-                        print("the thermometer is disconnected, or connected improperly")
-                        flash_red()
-                    else:
-                        send_temp(write_api, lines)
-
-            else:  # try to connect to the thermometer again
-                temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
-
-            time.sleep(1)
+            # get data from pt-1000 temperature sensor and send to influxDB
+            temp_sent_bool, temp_sensor_bool, temp_sensor_serial = \
+                collect_temp_data(temp_sensor_serial, write_api, temp_sensor_bool)
 
     except KeyboardInterrupt:
         print("\n\nExiting loop and clearing data")
