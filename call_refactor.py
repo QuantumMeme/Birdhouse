@@ -214,7 +214,7 @@ def load_temp_sensor(temp_sensor_bool, uart_address='/dev/ttyS0'):
     try:
         temp_sensor_serial = serial.Serial(uart_address, 9600, timeout=0)
     except serial.SerialException as e:
-        print("Error, \n", e)
+        print("Error, check physical connections \n", e)
     else:
         temp_sensor_bool = True
         send_cmd("C,0", temp_sensor_serial)  # Turn off cont mode
@@ -224,9 +224,63 @@ def load_temp_sensor(temp_sensor_bool, uart_address='/dev/ttyS0'):
         return temp_sensor_serial, temp_sensor_bool
 
 
+def connect_influxdb():
+    num_led_flash = 3
+    while True:  # continuously try to connect
+        # TODO: if the network is disconnected, will the script get stuck here?
+        # TODO: if so, might be better to set a flag and store locally, maybe after some number of tries?
+        write_api = None
+        connection_bool = False
+        try:
+            dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
+            write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+        except Exception as e:
+            print(e)
+            for i in range(num_led_flash):
+                flash_red()
+        else:
+            for i in range(num_led_flash):
+                flash_green()
+                connection_bool = True
+            return write_api, connection_bool
+
+
+def collect_lux_data(lux_sensor, write_api, lux_sensor_bool):
+    # Try to get data, if fails change "lux_sensor_bool" variable
+    # Initialize value for error checking
+    lux_value = None
+    lux_sent_bool = False
+
+    try:
+        lux_value = lux_sensor.light  # easier lux value
+    except Exception as e:
+        print("failed val assignment:\n ", e)
+        lux_sensor_bool = False
+
+    # If sensor disconnects midway try again
+    if not lux_sensor_bool:
+        lux_sensor = load_lux_sensor(lux_sensor_bool)
+        try:
+            lux_value = lux_sensor.light  # easier lux value
+        except Exception as e:
+            print("failed val assignment:\n ", e)
+            lux_sensor_bool = False
+
+    # send lux data before attempting temperature data
+    if lux_sensor_bool and lux_value:
+        # TODO: any error checking on value?
+        send_lux(write_api, lux_value)
+        lux_sent_bool = True
+    else:  # lux sensor isn't working, nothing is being sent
+        # TODO: if saving values locally, do that here
+        flash_red()
+
+    return lux_sent_bool, lux_sensor_bool
+
+
 def main():
     lux_sensor_bool, temp_sensor_bool = False
-    # when the program terminates we will clean up GPIO stuff.
+    # when the program terminates we will clean up GPIO information
     atexit.register(clean)
 
     # GPIO setup
@@ -234,6 +288,7 @@ def main():
     GPIO.setup(26, GPIO.OUT, initial=GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial=GPIO.LOW)
 
+    # TODO: elaborate on what this comment means
     # variables will change depending on if the device is on
 
     print("setting up VEML7700 lux sensor...")
@@ -245,12 +300,12 @@ def main():
     TX/RX is '/dev/ttyS0' and it will be defined as such
     '''
 
-    print("Connecting AtlasScientific PT-1000...")
+    print("Connecting AtlasScientific PT-1000 temperature sensor...")
 
     # Try to connect to the serial port. This shouldn't fail and if it does, check your physical connections
     temp_sensor_serial, temp_sensor_bool = load_temp_sensor(temp_sensor_bool)
 
-    # We continue if at least one sensor is working, otherwise what's the point?
+    # We continue if at least one sensor is working
     if lux_sensor_bool and temp_sensor_bool:
         print("all connected!")
         for i in range(3):
@@ -273,45 +328,21 @@ def main():
     '''
     InfluxDB setup
     '''
-    while True:  # keep trying to connect, no point otherwise
-        try:
-            dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
-            write_api = dbclient.write_api(write_options=SYNCHRONOUS)
-        except Exception as e:
-            print(e)
-            for i in range(3):
-                flash_red()
-        else:
-            for i in range(3):
-                flash_green()
-            break
+    write_api, connection_bool = connect_influxdb()
 
     try:
         while True:
             '''lux'''
-            # Try to get data, if fails change "veml" variable
-            try:
-                val = lux_sensor.light  # easier lux value
-            except Exception as e:
-                print("failed val assignment:\n ", e)
-                lux_sensor_bool = False
+            # get data from lux sensor and send to influxDB
+            lux_sent_bool, lux_sensor_bool = collect_lux_data(lux_sensor, write_api, lux_sensor_bool)
 
-            # if it disconnects midway then we can try to do it again?
-            if not lux_sensor_bool:
-                lux_sensor = load_lux_sensor()
+            '''temperature'''
 
-            # we're just gonna send lux before trying to do anything temp related.
-            if lux_sensor_bool:
-                send_lux(write_api, val)
-            else:  # lux sensor isn't working, we aren't sending anything
-                flash_red()
+            # Send "read" command to the pt-1000 temperature sensor
 
-            '''temp'''
-
-            # Send "read" command to the pt-1000
-
-            if not temp_sensor_bool:  # This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
-                temp_sensor_serial = load_temp_sensor()
+            # This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
+            if not temp_sensor_bool:
+                temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
             try:
                 send_cmd("R", temp_sensor_serial)  # send commands
                 lines = read_lines(temp_sensor_serial)  # read results
@@ -346,7 +377,7 @@ def main():
                         send_temp(write_api, lines)
 
             else:  # try to connect to the thermometer again
-                temp_sensor_serial = load_temp_sensor()
+                temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
 
             time.sleep(1)
 
