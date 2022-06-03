@@ -335,7 +335,6 @@ def main():
                             flash_red()
                         else:
                             sendTemp(write_api, lines)
-
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
 
