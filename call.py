@@ -68,6 +68,7 @@ import RPi.GPIO as GPIO
 #global flags
 veml = False
 pt1000 = False
+connected = False
 birdhouseID = "bh1" #change for different point on influx
 
 
@@ -181,6 +182,13 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
         flash_green()
         #print(val)
 
+def sendPacket(influx_client, packet):
+    try:
+        influx_client.write(bucket, org, packet)
+    except Exception as e:
+        print(e)
+        raise RuntimeError("Unable to connect!")
+
 # Hardware setup functions
 
 def loadVEML(): # returning the veml object to be able to get data from it later
@@ -212,7 +220,7 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         return ser
 
 def main():
-    global veml, pt1000
+    global veml, pt1000, connected
     #when the program terminates we will clean up GPIO stuff.
     atexit.register(clean)
 
@@ -266,11 +274,13 @@ def main():
             write_api = dbclient.write_api(write_options=SYNCHRONOUS)
         except Exception as e:
             print(e)
+            connected = False
             for i in range(3):
                 flash_red()
         else:
             for i in range(3):
                 flash_green()
+            connected = True
             break
     
     
@@ -291,6 +301,7 @@ def main():
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
                 sendLux(write_api, val)
+
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
 
