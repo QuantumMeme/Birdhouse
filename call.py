@@ -218,6 +218,22 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         ser.flush() # Clear prior data
         print("done!")
         return ser
+def reconnect():
+    global connected
+    try:
+        dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
+        write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+    except Exception as e:
+        print(e)
+        connected = False
+        for i in range(3):
+            flash_red()
+            return write_api
+    else:
+        for i in range(3):
+            flash_green()
+        connected = True
+        return write_api
 
 def main():
     global veml, pt1000, connected
@@ -268,25 +284,13 @@ def main():
     '''
     InfluxDB setup
     '''
-    while True: # keep trying to connect, no point otherwise
-        try:
-            dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
-            write_api = dbclient.write_api(write_options=SYNCHRONOUS)
-        except Exception as e:
-            print(e)
-            connected = False
-            for i in range(3):
-                flash_red()
-        else:
-            for i in range(3):
-                flash_green()
-            connected = True
-            break
+    while not connected: # keep trying to connect, no point otherwise
+        write_api = reconnect()
+        time.sleep(1)
     
     
     try:
         while True:
-            '''lux'''
             # Try to get data, if fails change "veml" variable
             try:
                 val = veml7700.light #easier lux value
@@ -305,8 +309,6 @@ def main():
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
 
-
-            '''temp'''
 
             # Send "read" command to the pt-1000
             
