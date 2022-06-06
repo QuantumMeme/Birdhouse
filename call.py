@@ -72,10 +72,9 @@ connected = False
 birdhouseID = "bh1" #change for different point on influx
 
 
-def clean(serial): # this is defined for atExit.
+def clean(): # this is defined for atExit.
     GPIO.cleanup()
     print("GPIO unallocated")
-    serial.flush()
 
 # following functions are taken straight from AtlasScientific's github repo. Same for their UART implementation
 # https://github.com/AtlasScientific/Raspberry-Pi-sample-code 
@@ -180,7 +179,7 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
             flash_red()
     else:
         flash_green()
-        #print(val)
+        print(val)
 
 def sendPacket(influx_client, packet):
     try:
@@ -324,7 +323,7 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    print(lines[0].decode("utf-8"))
+                    lines[0].decode("utf-8")
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
                     flash_red()

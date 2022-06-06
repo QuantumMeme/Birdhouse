@@ -66,10 +66,9 @@ temp_sensor_bool = False
 birdhouseID = "bh1"  # change for different point on influx
 
 
-def clean(serial):  # this is defined for atExit.
+def clean():  # this is defined for atExit.
     GPIO.cleanup()
     print("GPIO unallocated")
-    serial.flush()
 
 
 # following functions are taken straight from AtlasScientific's github repo. Same for their UART implementation
@@ -289,28 +288,30 @@ def collect_temp_data(temp_sensor_serial, write_api, temp_sensor_bool):
         # Checking results and sending temp
     if temp_sensor_bool:
         try:
-            print(lines[0].decode("utf-8"))
-        except IndexError:  # Nothing was sent
+            lines[0].decode("utf-8")
+        except IndexError: #Nothing was sent
             print("nothing sent; Not sending temp")
             flash_red()
-        except UnicodeDecodeError:  # What was sent isn't decodable
+        except UnicodeDecodeError: #What was sent isn't decodable
             print("cannot decode data; Not sending temp")
             flash_red()
-        if not str(lines[0][0]).isdigit():  # What was sent isn't a number.
-            print("expected float but got string; Not sending temp")
-            flash_red()
         else:
-            # Checking for status messages, sometimes the first message is going to be one.
-            if lines[0][0] == b'*'[0]:
-                print("status message, skipping")
-                flash_red()
-            # Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-            elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode(
-                    "utf-8")) > 100:
-                print("the thermometer is disconnected, or connected improperly")
+            try:
+                lines[0].decode("utf-8")
+            except UnicodeDecodeError:
+                print("garbage was sent and cannot be decoded!")
+            if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
+                print("expected float but got string; Not sending temp")
                 flash_red()
             else:
-                send_temp(write_api, lines)
+                if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                    print("status message, skipping")
+                    flash_red()
+                elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                    print("the thermometer is disconnected, or connected improperly")
+                    flash_red()
+                else:
+                    send_temp(write_api, lines)
 
     else:  # try to connect to the thermometer again
         temp_sensor_serial = load_temp_sensor(temp_sensor_bool)
@@ -321,7 +322,8 @@ def collect_temp_data(temp_sensor_serial, write_api, temp_sensor_bool):
 
 
 def main():
-    lux_sensor_bool, temp_sensor_bool = False
+    lux_sensor_bool = False
+    temp_sensor_bool = False
     # when the program terminates we will clean up GPIO information
     atexit.register(clean)
 
