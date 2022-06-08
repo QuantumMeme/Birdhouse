@@ -52,10 +52,10 @@ from serial import SerialException
 import board
 import adafruit_veml7700
 
-#import string
-import sys, os
+import csv
+import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import atexit
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -244,6 +244,12 @@ def main():
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
+    #opening CSV writer
+    file = open('text.csv', 'w')
+    writer = csv.writer(file)
+
+    writer.writerow(['lux','temp']) # header
+
     #variables will change depending on if the device is on
 
     print("setting up VEML7700 lux sensor...")
@@ -286,8 +292,7 @@ def main():
     while not connected: # keep trying to connect, no point otherwise
         write_api = reconnect()
         time.sleep(1)
-    
-    
+      
     try:
         while True:
             # Try to get data, if fails change "veml" variable
@@ -303,11 +308,11 @@ def main():
 
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
-                sendLux(write_api, val)
+                if connected:
+                    sendLux(write_api, val)
 
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
-
 
             # Send "read" command to the pt-1000
             
@@ -346,9 +351,20 @@ def main():
                             print("the thermometer is disconnected, or connected improperly")
                             flash_red()
                         else:
-                            sendTemp(write_api, lines)
+                            if connected:
+                                sendTemp(write_api, lines)
+
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
+
+
+            # uhhhh theres a better way to do this im sure
+            if not connected and pt1000 and veml:
+                writer.writerow([val, float(lines[0][:6].decode("utf-8"))])
+            elif not connected and pt1000 and not veml:
+                writer.writerow(["-", float(lines[0][:6].decode("utf-8"))])
+            elif not connected and not pt1000 and veml:
+                writer.writerow([val, "-"])
 
             time.sleep(1)
 
