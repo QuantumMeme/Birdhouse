@@ -61,8 +61,8 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 import RPi.GPIO as GPIO
 
 # global flags
-lux_sensor_bool = False
-temp_sensor_bool = False
+#lux_sensor_bool = False
+#temp_sensor_bool = False
 birdhouseID = "bh1"  # change for different point on influx
 
 
