@@ -6,11 +6,13 @@ Use this as a reference: https://pinout.xyz/
 
 > - a green LED as an indicator light.
 < - a blue LED as an indicator light
+
 X - PT-1000 Temperature Sensor
-    TX -> RXD
-    RX -> TXD
+    TX  -> RXD
+    RX  -> TXD
     VCC -> 5V
     GND -> GND
+
 Z - VEML7700 Lux Sensor
     VID -> 3V3
     3o3 -> nothing
@@ -46,6 +48,7 @@ GND             ><    GPIO 21
 
 
 #communication
+from wifi import Cell, Scheme
 from json import load
 import serial
 from serial import SerialException
@@ -148,7 +151,8 @@ token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1
 org = "david.pesin@gmail.com"
 bucket = "david.pesin's Bucket"
 
-def sendLux(influx_client, value): # Sending lux 
+def sendLux(influx_client, value): # Sending lux
+    global connected
     point = Point("birdhouse") \
         .tag("bhID", birdhouseID) \
         .field("lux", value) \
@@ -159,12 +163,13 @@ def sendLux(influx_client, value): # Sending lux
         print(e)
         for i in range(4):
             flash_red()
+        connected = False
     else:
         flash_green()
         print(value)
 
 def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the period) of the bytes received.
-
+    global connected
     val = float(valueBytes[0][:6].decode('utf-8'))
 
     point = Point("birdhouse") \
@@ -177,6 +182,7 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
         print(e)
         for i in range(4):
             flash_red()
+        connected = False
     else:
         flash_green()
         print(val)
@@ -217,7 +223,7 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         ser.flush() # Clear prior data
         print("done!")
         return ser
-def reconnect():
+def influxSetup():
     global connected
     try:
         dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
@@ -244,11 +250,14 @@ def main():
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
-    #opening CSV writer
-    file = open('text.csv', 'w')
-    writer = csv.writer(file)
+    #opening CSV writers
+    file1 = open('temp.csv', 'w')
+    file2 = open('lux.csv', 'w')
+    tempWriter = csv.writer(file1)
+    luxWriter = csv.writer(file2)
 
-    writer.writerow(['lux','temp']) # header
+    tempWriter.writerow(['datetime','temp']) # header
+    luxWriter.writerow(['datetime','lux'])
 
     #variables will change depending on if the device is on
 
@@ -289,12 +298,16 @@ def main():
     '''
     InfluxDB setup
     '''
-    while not connected: # keep trying to connect, no point otherwise
-        write_api = reconnect()
-        time.sleep(1)
+    write_api = influxSetup()
       
     try:
         while True:
+
+            if not connected:
+                pass
+                # TODO reconnect using the wifi package
+                # https://wifi.readthedocs.io/en/latest/scanning.html#connecting-to-a-network
+
             # Try to get data, if fails change "veml" variable
             try:
                 val = veml7700.light #easier lux value
@@ -310,6 +323,8 @@ def main():
             if veml:
                 if connected:
                     sendLux(write_api, val)
+                else:
+                    luxWriter.writerow(datetime.utcnow(), val)
 
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
@@ -353,18 +368,11 @@ def main():
                         else:
                             if connected:
                                 sendTemp(write_api, lines)
+                            else:
+                                tempWriter.writerow(datetime.utcnow(), float(lines[0][:6].decode("utf-8")))
 
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
-
-
-            # uhhhh theres a better way to do this im sure
-            if not connected and pt1000 and veml:
-                writer.writerow([val, float(lines[0][:6].decode("utf-8"))])
-            elif not connected and pt1000 and not veml:
-                writer.writerow(["-", float(lines[0][:6].decode("utf-8"))])
-            elif not connected and not pt1000 and veml:
-                writer.writerow([val, "-"])
 
             time.sleep(1)
 

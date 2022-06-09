@@ -228,6 +228,12 @@ def connect_influxdb():
     while True:  # continuously try to connect
         # TODO: if the network is disconnected, will the script get stuck here?
         # TODO: if so, might be better to set a flag and store locally, maybe after some number of tries?
+
+        # If the sending ever fails using the write_api, the issue is almost always going to be a connection issue.
+        # When this happens, a flag will be set to False called "connected"
+        # Whenever this happens, it will automatically start writing to a CSV for each measurement.
+        # Every time we iterate we will try to reconnect with the Wifi package. If we successfully connect,
+        # the flag will be set to True. Otherwise it stays False and we keep writing to CSV
         write_api = None
         connection_bool = False
         try:
@@ -332,8 +338,8 @@ def main():
     GPIO.setup(26, GPIO.OUT, initial=GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial=GPIO.LOW)
 
-    # TODO: elaborate on what this comment means
-    # variables will change depending on if the device is on
+    # "lux_sensor bool" and "temp_sensor_bool" will change when each respective device is either connected or disconnected.
+    # This is generally due to a physical connection issue, but it can be issues with the device itself.
 
     print("setting up VEML7700 lux sensor...")
 
