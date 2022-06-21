@@ -48,11 +48,10 @@ GND             ><    GPIO 21
 
 
 #communication
-from wifi import Cell, Scheme
-from json import load
 import serial
 from serial import SerialException
 import board
+import socket
 import adafruit_veml7700
 
 import csv
@@ -240,6 +239,22 @@ def influxSetup():
         connected = True
         return write_api
 
+def isConnected():
+  try:
+    # see if we can resolve the host name -- tells us if there is
+    # a DNS listening
+    host = socket.gethostbyname("1.1.1.1")
+    # connect to the host -- tells us if the host is actually reachable
+    s = socket.create_connection((host, 80), 2)
+    s.close()
+    return True
+  except Exception:
+     pass # we ignore any errors, returning False
+  return False
+
+
+    
+
 def main():
     global veml, pt1000, connected
     #when the program terminates we will clean up GPIO stuff.
@@ -251,8 +266,8 @@ def main():
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
     #opening CSV writers
-    file1 = open('temp.csv', 'w')
-    file2 = open('lux.csv', 'w')
+    file1 = open('data/temp.csv', 'w')
+    file2 = open('data/lux.csv', 'w')
     tempWriter = csv.writer(file1)
     luxWriter = csv.writer(file2)
 
@@ -304,9 +319,8 @@ def main():
         while True:
 
             if not connected:
-                pass
-                # TODO reconnect using the wifi package
-                # https://wifi.readthedocs.io/en/latest/scanning.html#connecting-to-a-network
+                if isConnected():
+                    connected = True
 
             # Try to get data, if fails change "veml" variable
             try:
@@ -324,7 +338,7 @@ def main():
                 if connected:
                     sendLux(write_api, val)
                 else:
-                    luxWriter.writerow(datetime.utcnow(), val)
+                    luxWriter.writerow([datetime.utcnow(), val])
 
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
@@ -369,7 +383,7 @@ def main():
                             if connected:
                                 sendTemp(write_api, lines)
                             else:
-                                tempWriter.writerow(datetime.utcnow(), float(lines[0][:6].decode("utf-8")))
+                                tempWriter.writerow([datetime.utcnow(), float(lines[0][:6].decode("utf-8"))])
 
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
