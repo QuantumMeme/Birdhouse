@@ -51,6 +51,7 @@ GND             ><    GPIO 21
 import serial
 from serial import SerialException
 import board
+import subprocess
 import socket
 import adafruit_veml7700
 
@@ -251,8 +252,6 @@ def isConnected():
   except Exception:
      pass # we ignore any errors, returning False
   return False
-
-
     
 
 def main():
