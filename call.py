@@ -265,8 +265,9 @@ def main():
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
     #opening CSV writers
-    file1 = open('data/temp.csv', 'w')
-    file2 = open('data/lux.csv', 'w')
+    # CHANGE FOR WHEREVER YOU SAVE
+    file1 = open('/home/pi/Birdhouse/data/temp.csv', 'w')
+    file2 = open('/home/pi/Birdhouse/data/lux.csv', 'w')
     tempWriter = csv.writer(file1)
     luxWriter = csv.writer(file2)
 
