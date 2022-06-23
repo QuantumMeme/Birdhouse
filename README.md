@@ -9,7 +9,7 @@ Make sure to clone this repo to desktop!
     `pip3 install adafruit-circuitpython-veml7700 influxdb influxdb-client`
 4. In order to make sure that we stay connected to the internet, we will create a little script to ensure that for us. Let's created it with the following command:
     `sudo nano /usr/local/bin/wificheck.sh`
-5. Add the following code and save it with `ctrl+x` followed by `enter` and `enter`
+5. Add the following code and save it with `ctrl+x` and follow relevant instructions
     `#!/bin/bash
 
     # Checking connectivity with google. -q is quiet mode, --spider just checks page availability
@@ -19,6 +19,7 @@ Make sure to clone this repo to desktop!
     if [ $? -ne 0 ]; then
         ifconfig wlan0 down
         ifconfig wlan0 up
+    fi
     `
 6. Then we need to make it executable with the following:
     `sudo chmod +x /usr/local/bin/wificheck.sh`
