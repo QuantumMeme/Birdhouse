@@ -17,8 +17,8 @@ Make sure to clone this repo to desktop!
 
     # if it returns any shell code outside of 0, restart wifi
     if [ $? -ne 0 ]; then
-        ifconfig wlan0 down
-        ifconfig wlan0 up
+        sudo ifconfig wlan0 down
+        sudo ifconfig wlan0 up
     fi
     `
 6. Then we need to make it executable with the following:
