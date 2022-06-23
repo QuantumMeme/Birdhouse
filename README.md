@@ -12,20 +12,14 @@ Make sure to clone this repo to desktop!
 5. Add the following code and save it with `ctrl+x` followed by `enter` and `enter`
     `#!/bin/bash
 
-    # Pinging the Cloudflare DNS to check if there's internet
-    GATEWAY=1.1.1.1
+    # Checking connectivity with google. -q is quiet mode, --spider just checks page availability
+    wget -q --spider http://google.com
 
-    # Send two pings, with the output going to /dev/null
-    ping -c2 ${GATEWAY} > /dev/null
-
-    # Check to see if the returned value from ping ($?)
-    # is not 0 and then act to restart wlan1 if necessary
-    if [ $? == 0 ]
-    then
-        # Restart wlan1 (the wireless interface)
-        ifconfig wlan1 down
-        ifconfig wlan1 up
-    fi`
+    # if it returns any shell code outside of 0, restart wifi
+    if [ $? -ne 0 ]; then
+        ifconfig wlan0 down
+        ifconfig wlan0 up
+    `
 6. Then we need to make it executable with the following:
     `sudo chmod +x /usr/local/bin/wificheck.sh`
 7. Now we have to make both of these run on startup. Open the crontab file by doing the command `crontab -e`. If it's your first time using it, use selection 1 (nano is the easiest to work with)
