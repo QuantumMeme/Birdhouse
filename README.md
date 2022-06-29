@@ -10,7 +10,8 @@ Make sure to clone this repo to desktop!
 4. In order to make sure that we stay connected to the internet, we will create a little script to ensure that for us. Let's created it with the following command:
     `sudo nano /usr/local/bin/wificheck.sh`
 5. Add the following code and save it with `ctrl+x` and follow relevant instructions
-    `#!/bin/bash
+    ```
+    #!/bin/bash
 
     # Checking connectivity with google. -q is quiet mode, --spider just checks page availability
     wget -q --spider http://google.com
@@ -20,7 +21,7 @@ Make sure to clone this repo to desktop!
         sudo ifconfig wlan0 down
         sudo ifconfig wlan0 up
     fi
-    `
+    ```
 6. Then we need to make it executable with the following:
     `sudo chmod +x /usr/local/bin/wificheck.sh`
 7. Now we have to make both of these run on startup. Open the crontab file by doing the command `crontab -e`. If it's your first time using it, use selection 1 (nano is the easiest to work with)
