@@ -13,26 +13,27 @@ X - PT-1000 Temperature Sensor
     VCC -> 5V
     GND -> GND
 
-Z - VEML7700 Lux Sensor
-    VID -> 3V3
-    3o3 -> nothing
+Z - PmodALS Lux Sensor
+    VCC -> 3V3
     GND -> GND
-    SDA -> SDA
-    SCL -> SCL
+    SCK -> SCLK
+    SDO -> MISO
+    NC  -> nothing
+    CS  -> CE0
 
 3V3 power       ZX    5V power
-SDA             ZO
-SCL             ZO
+                OO
+                OO
                 OX    TXD
-GND             ZX    RXD
+                OX    RXD
                 OO
                 OX    GND
                 OO
                 OO
                 O<    GND
-                OO
-                OO
-                OO
+MISO            ZO
+SCLK            ZZ    CE1
+GND             ZO
                 OO
                 OO
                 OO
