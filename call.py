@@ -152,7 +152,7 @@ token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1
 org = "david.pesin@gmail.com"
 bucket = "david.pesin's Bucket"
 
-def sendLux(influx_client, value): # Sending lux
+def sendLux(influx_client, value): # Sending lux.
     global connected
     point = Point("birdhouse") \
         .tag("bhID", birdhouseID) \
@@ -189,32 +189,21 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
         #print(val)
 
 #setup and sending is done simultaneously in the C program
-def newSendLux(influx_client):
-    global connected, veml
+def getLux():
+    global veml
     light = subprocess.run(['sudo', './getlight'], capture_output = True, text = True)
-    #print(light.stdout)
-    value = int(light.stdout,16)
-
+    #print("val: ", light.stdout)
+    try:
+        value = int(light.stdout,16)
+    except ValueError:
+        print("something wrong was sent")
+        flash_red()
+        return -1
     if len(light.stderr) > 1:
         print("firmware issue?")
         veml = False
-        return
+        return -1 
     else:
-        veml = True
-    point = Point("birdhouse") \
-        .tag("bhID", birdhouseID) \
-        .field("lux", value) \
-        .time(datetime.utcnow(), WritePrecision.NS)
-    try: 
-        influx_client.write(bucket, org, point)
-    except Exception as e:
-        print(e)
-        for i in range(4):
-            flash_red()
-        connected = False
-    else:
-        flash_green()
-        connected = True
         return value
 
 
@@ -327,16 +316,19 @@ def main():
         print("all connected!")
         for i in range(3):
             flash_green()
+        time.sleep(5)
     elif veml and not pt1000:
         print("Temperature not connected")
         flash_red()
         flash_red()
         flash_green()
+        time.sleep(5)
     elif not veml and pt1000:
         print("lux not connected")
         flash_green()
         flash_green()
         flash_red()
+        time.sleep(5)
     elif not veml and not pt1000:
         print("No devices connected. No point in running this.")
         flash_red(1)
@@ -355,29 +347,32 @@ def main():
                     connected = True
 
             # Try to get data, if fails change "veml" variable
-            '''
+            
             try:
-                val = veml7700.light #easier lux value
+                #val = veml7700.light #easier lux value
+                val = getLux()
             except Exception as e:
                 print("failed val assignment:\n ", e)
                 veml = False
+            if val < 0:
+                print("failed to get info")
+                veml = False
             
             #if it disconnects midway then we can try to do it again?
-            if not veml:
-                veml7700 = loadVEML()
-            '''
+            #if not veml:
+            #    veml7700 = loadVEML()
+            
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
                 if connected:
-                    #sendLux(write_api, val)
-                    val = newSendLux(write_api)
+                    sendLux(write_api, val)
 
                 else:
                     luxWriter.writerow([datetime.utcnow(), val])
 
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
-
+            
             # Send "read" command to the pt-1000
             
             if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
@@ -405,7 +400,7 @@ def main():
                     except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
                         print("garbage was sent and cannot be decoded!")
                         flash_red()
-                    if lines == '':
+                    if lines[0][0] == '':
                         print ("nothing sent")
                         flash_red()
                     elif not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
