@@ -69,10 +69,10 @@ import RPi.GPIO as GPIO
 
 
 #global flags
-veml = False
+veml = True
 pt1000 = False
 connected = False
-birdhouseID = "bh1" #change for different point on influx
+birdhouseID = "bh2" #change for different point on influx
 
 
 def clean(): # this is defined for atExit.
@@ -166,7 +166,7 @@ def sendLux(influx_client, value): # Sending lux
         connected = False
     else:
         flash_green()
-        print(value)
+        #print(value)
 
 def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the period) of the bytes received.
     global connected
@@ -185,7 +185,37 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
         connected = False
     else:
         flash_green()
-        print(val)
+        #print(val)
+
+#setup and sending is done simultaneously in the C program
+def newSendLux(influx_client):
+    global connected, veml
+    light = subprocess.run(['sudo', './getlight'], capture_output = True, text = True)
+    print(light.stdout)
+    value = int(light.stdout,16)
+
+    if len(light.stderr) > 1:
+        print("firmware issue?")
+        veml = False
+        return
+    else:
+        veml = True
+    point = Point("birdhouse") \
+        .tag("bhID", birdhouseID) \
+        .field("lux", value) \
+        .time(datetime.utcnow(), WritePrecision.NS)
+    try: 
+        influx_client.write(bucket, org, point)
+    except Exception as e:
+        print(e)
+        for i in range(4):
+            flash_red()
+        connected = False
+    else:
+        flash_green()
+        connected = True
+        return value
+
 
 def sendPacket(influx_client, packet):
     try:
@@ -196,6 +226,8 @@ def sendPacket(influx_client, packet):
 
 # Hardware setup functions
 
+
+# THIS IS FOR THE OLD LUX SENSOR
 def loadVEML(): # returning the veml object to be able to get data from it later
     global veml
     try:
@@ -265,9 +297,8 @@ def main():
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
     #opening CSV writers
-    # CHANGE FOR WHEREVER YOU SAVE
-    file1 = open('/home/pi/Birdhouse/data/temp.csv', 'w')
-    file2 = open('/home/pi/Birdhouse/data/lux.csv', 'w')
+    file1 = open('/home/pi/Desktop/Birdhouse/data/temp.csv', 'w')
+    file2 = open('/home/pi/Desktop/Birdhouse/data/lux.csv', 'w')
     tempWriter = csv.writer(file1)
     luxWriter = csv.writer(file2)
 
@@ -276,9 +307,9 @@ def main():
 
     #variables will change depending on if the device is on
 
-    print("setting up VEML7700 lux sensor...")
+    #print("setting up VEML7700 lux sensor...")
 
-    veml7700 = loadVEML()
+    #veml7700 = loadVEML()
 
     '''
     Setting up the Atlas PT-1000 thermometer through UART.
@@ -323,6 +354,7 @@ def main():
                     connected = True
 
             # Try to get data, if fails change "veml" variable
+            '''
             try:
                 val = veml7700.light #easier lux value
             except Exception as e:
@@ -332,11 +364,13 @@ def main():
             #if it disconnects midway then we can try to do it again?
             if not veml:
                 veml7700 = loadVEML()
-
+            '''
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
                 if connected:
-                    sendLux(write_api, val)
+                    #sendLux(write_api, val)
+                    val = newSendLux(write_api)
+
                 else:
                     luxWriter.writerow([datetime.utcnow(), val])
 
@@ -357,6 +391,7 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
+                    print(lines)
                     lines[0].decode("utf-8")
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
@@ -367,9 +402,13 @@ def main():
                 else:
                     try:
                         lines[0].decode("utf-8")
-                    except UnicodeDecodeError:
+                    except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
                         print("garbage was sent and cannot be decoded!")
-                    if not str(lines[0][0]).isdigit(): #What was sent isn't a number.
+                        flash_red()
+                    if not lines[0]:
+                        print("nothing contained in the string!")
+                        flash_red()
+                    elif not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
                         print("expected float but got string; Not sending temp")
                         flash_red()
                     else:

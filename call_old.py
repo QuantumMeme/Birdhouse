@@ -6,11 +6,13 @@ Use this as a reference: https://pinout.xyz/
 
 > - a green LED as an indicator light.
 < - a blue LED as an indicator light
+
 X - PT-1000 Temperature Sensor
-    TX -> RXD
-    RX -> TXD
+    TX  -> RXD
+    RX  -> TXD
     VCC -> 5V
     GND -> GND
+
 Z - VEML7700 Lux Sensor
     VID -> 3V3
     3o3 -> nothing
@@ -46,16 +48,17 @@ GND             ><    GPIO 21
 
 
 #communication
-from json import load
 import serial
 from serial import SerialException
 import board
+import subprocess
+import socket
 import adafruit_veml7700
 
-#import string
-import sys, os
+import csv
+import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import atexit
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -68,6 +71,7 @@ import RPi.GPIO as GPIO
 #global flags
 veml = False
 pt1000 = False
+connected = False
 birdhouseID = "bh1" #change for different point on influx
 
 
@@ -147,7 +151,8 @@ token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1
 org = "david.pesin@gmail.com"
 bucket = "david.pesin's Bucket"
 
-def sendLux(influx_client, value): # Sending lux 
+def sendLux(influx_client, value): # Sending lux
+    global connected
     point = Point("birdhouse") \
         .tag("bhID", birdhouseID) \
         .field("lux", value) \
@@ -158,12 +163,13 @@ def sendLux(influx_client, value): # Sending lux
         print(e)
         for i in range(4):
             flash_red()
+        connected = False
     else:
         flash_green()
         print(value)
 
 def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the period) of the bytes received.
-
+    global connected
     val = float(valueBytes[0][:6].decode('utf-8'))
 
     point = Point("birdhouse") \
@@ -176,9 +182,17 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
         print(e)
         for i in range(4):
             flash_red()
+        connected = False
     else:
         flash_green()
-        #print(val)
+        print(val)
+
+def sendPacket(influx_client, packet):
+    try:
+        influx_client.write(bucket, org, packet)
+    except Exception as e:
+        print(e)
+        raise RuntimeError("Unable to connect!")
 
 # Hardware setup functions
 
@@ -209,9 +223,39 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         ser.flush() # Clear prior data
         print("done!")
         return ser
+def influxSetup():
+    global connected
+    try:
+        dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
+        write_api = dbclient.write_api(write_options=SYNCHRONOUS)
+    except Exception as e:
+        print(e)
+        connected = False
+        for i in range(3):
+            flash_red()
+            return write_api
+    else:
+        for i in range(3):
+            flash_green()
+        connected = True
+        return write_api
+
+def isConnected():
+  try:
+    # see if we can resolve the host name -- tells us if there is
+    # a DNS listening
+    host = socket.gethostbyname("1.1.1.1")
+    # connect to the host -- tells us if the host is actually reachable
+    s = socket.create_connection((host, 80), 2)
+    s.close()
+    return True
+  except Exception:
+     pass # we ignore any errors, returning False
+  return False
+    
 
 def main():
-    global veml, pt1000
+    global veml, pt1000, connected
     #when the program terminates we will clean up GPIO stuff.
     atexit.register(clean)
 
@@ -219,6 +263,16 @@ def main():
     GPIO.setwarnings(False)
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
+
+    #opening CSV writers
+    # CHANGE FOR WHEREVER YOU SAVE
+    file1 = open('/home/pi/Birdhouse/data/temp.csv', 'w')
+    file2 = open('/home/pi/Birdhouse/data/lux.csv', 'w')
+    tempWriter = csv.writer(file1)
+    luxWriter = csv.writer(file2)
+
+    tempWriter.writerow(['datetime','temp']) # header
+    luxWriter.writerow(['datetime','lux'])
 
     #variables will change depending on if the device is on
 
@@ -259,23 +313,15 @@ def main():
     '''
     InfluxDB setup
     '''
-    while True: # keep trying to connect, no point otherwise
-        try:
-            dbclient = InfluxDBClient(url="https://us-east-1-1.aws.cloud2.influxdata.com", token=token, org=org)
-            write_api = dbclient.write_api(write_options=SYNCHRONOUS)
-        except Exception as e:
-            print(e)
-            for i in range(3):
-                flash_red()
-        else:
-            for i in range(3):
-                flash_green()
-            break
-    
-    
+    write_api = influxSetup()
+      
     try:
         while True:
-            '''lux'''
+
+            if not connected:
+                if isConnected():
+                    connected = True
+
             # Try to get data, if fails change "veml" variable
             try:
                 val = veml7700.light #easier lux value
@@ -289,12 +335,13 @@ def main():
 
             # we're just gonna send lux before trying to do anything temp related.
             if veml:
-                sendLux(write_api, val)
+                if connected:
+                    sendLux(write_api, val)
+                else:
+                    luxWriter.writerow([datetime.utcnow(), val])
+
             else: #lux sensor isn't working, we aren't sending anything
                 flash_red()
-
-
-            '''temp'''
 
             # Send "read" command to the pt-1000
             
@@ -310,7 +357,7 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    print(lines[0].decode("utf-8"))
+                    lines[0].decode("utf-8")
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
                     flash_red()
@@ -333,7 +380,10 @@ def main():
                             print("the thermometer is disconnected, or connected improperly")
                             flash_red()
                         else:
-                            sendTemp(write_api, lines)
+                            if connected:
+                                sendTemp(write_api, lines)
+                            else:
+                                tempWriter.writerow([datetime.utcnow(), float(lines[0][:6].decode("utf-8"))])
 
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
