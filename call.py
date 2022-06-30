@@ -192,7 +192,7 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
 def newSendLux(influx_client):
     global connected, veml
     light = subprocess.run(['sudo', './getlight'], capture_output = True, text = True)
-    print(light.stdout)
+    #print(light.stdout)
     value = int(light.stdout,16)
 
     if len(light.stderr) > 1:
@@ -392,7 +392,6 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    print(lines)
                     lines[0].decode("utf-8")
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
@@ -406,8 +405,8 @@ def main():
                     except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
                         print("garbage was sent and cannot be decoded!")
                         flash_red()
-                    if not lines[0]:
-                        print("nothing contained in the string!")
+                    if lines == '':
+                        print ("nothing sent")
                         flash_red()
                     elif not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
                         print("expected float but got string; Not sending temp")
