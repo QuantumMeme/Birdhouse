@@ -194,8 +194,9 @@ def getLux():
     light = subprocess.run(['sudo', './getlight'], capture_output = True, text = True)
     #print("val: ", light.stdout)
     try:
-        value = int(light.stdout,16)
+        value = int(light.stdout[:4],16)
     except ValueError:
+        veml = False
         print("something wrong was sent")
         flash_red()
         return -1
@@ -204,15 +205,8 @@ def getLux():
         veml = False
         return -1 
     else:
+        veml = True
         return value
-
-
-def sendPacket(influx_client, packet):
-    try:
-        influx_client.write(bucket, org, packet)
-    except Exception as e:
-        print(e)
-        raise RuntimeError("Unable to connect!")
 
 # Hardware setup functions
 
@@ -316,19 +310,19 @@ def main():
         print("all connected!")
         for i in range(3):
             flash_green()
-        time.sleep(5)
+        time.sleep(3)
     elif veml and not pt1000:
         print("Temperature not connected")
         flash_red()
         flash_red()
         flash_green()
-        time.sleep(5)
+        time.sleep(3)
     elif not veml and pt1000:
         print("lux not connected")
         flash_green()
         flash_green()
         flash_red()
-        time.sleep(5)
+        time.sleep(3)
     elif not veml and not pt1000:
         print("No devices connected. No point in running this.")
         flash_red(1)
@@ -342,6 +336,7 @@ def main():
     try:
         while True:
 
+            # Check connection status.
             if not connected:
                 if isConnected():
                     connected = True
@@ -387,23 +382,23 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    lines[0].decode("utf-8")
+                    #print(lines)
+                    float(lines[0].decode("utf-8"))
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
                     flash_red()
                 except UnicodeDecodeError: #What was sent isn't decodable
                     print("cannot decode data; Not sending temp")
                     flash_red()
+                except ValueError: #String was sent instead of float.
+                    print("cannot cast data as float; Not sending temp")
                 else:
                     try:
                         lines[0].decode("utf-8")
                     except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
                         print("garbage was sent and cannot be decoded!")
                         flash_red()
-                    if lines[0][0] == '':
-                        print ("nothing sent")
-                        flash_red()
-                    elif not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
+                    if not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
                         print("expected float but got string; Not sending temp")
                         flash_red()
                     else:
