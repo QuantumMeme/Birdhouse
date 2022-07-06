@@ -54,7 +54,7 @@ from serial import SerialException
 import board
 import subprocess
 import socket
-import adafruit_veml7700
+#import adafruit_veml7700
 
 import csv
 import sys
@@ -272,6 +272,8 @@ def main():
     atexit.register(clean)
 
     #GPIO setup
+
+    GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
     GPIO.setup(26, GPIO.OUT, initial = GPIO.LOW)
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)

@@ -8,7 +8,7 @@ Make sure to clone this repo to desktop!
 3. Enable SPI, SSH, and Serial Port (when prompted, no for the first prompt, yes for the second) through `sudo raspi-config` 's interface options
 4. If not done already, install python dependencies.
     ```bash
-    pip3 install influxdb influxdb-client
+    pip3 install influxdb influxdb-client board
     ```
 5. Install the BCM2835 library to interface with the new lux sensor via SPI with the following commands
     ```bash
@@ -49,7 +49,8 @@ Make sure to clone this repo to desktop!
     `@reboot sleep 45; python3 /home/pi/Desktop/Birdhouse/call.py`
     `*/5 * * * * /usr/bin/sudo -H /usr/local/bin/wificheck.sh >> /dev/null 2>&1`
 12. Press `ctrl+x` followed by `enter` followed by `enter`
-13. Reboot! `sudo reboot`
+13. Add data directory with `mkdir data` in the main folder
+14. Reboot! `sudo reboot`
 
 That's pretty much it to be honest! It's as streamlined as it gets. I would have had it running automatically when you plug it in, but the initial internet connection is a bit tricky to do without the interface.
 
