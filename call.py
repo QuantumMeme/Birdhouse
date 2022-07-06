@@ -190,22 +190,18 @@ def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the 
 
 #setup and sending is done simultaneously in the C program
 def getLux():
-    global veml
-    light = subprocess.run(['sudo', './getlight'], capture_output = True, text = True)
+    light = subprocess.run(['sudo', '/home/pi/Desktop/Birdhouse/getlight'], capture_output = True, text = True)
     #print("val: ", light.stdout)
     try:
         value = int(light.stdout[:4],16)
     except ValueError:
-        veml = False
         print("something wrong was sent")
         flash_red()
-        return -1
+        raise RuntimeError("Value Error")
     if len(light.stderr) > 1:
         print("firmware issue?")
-        veml = False
-        return -1 
+        raise RuntimeError("Firmware Error")
     else:
-        veml = True
         return value
 
 # Hardware setup functions
@@ -310,28 +306,32 @@ def main():
         print("all connected!")
         for i in range(3):
             flash_green()
-        time.sleep(3)
+
     elif veml and not pt1000:
         print("Temperature not connected")
         flash_red()
         flash_red()
         flash_green()
-        time.sleep(3)
+
     elif not veml and pt1000:
         print("lux not connected")
         flash_green()
         flash_green()
         flash_red()
-        time.sleep(3)
+
     elif not veml and not pt1000:
         print("No devices connected. No point in running this.")
         flash_red(1)
         sys.exit()
     
+    time.sleep(3)
     '''
     InfluxDB setup
     '''
+    print("connecting to influx")
     write_api = influxSetup()
+    print("done!")
+    time.sleep(1)
       
     try:
         while True:
@@ -341,33 +341,24 @@ def main():
                 if isConnected():
                     connected = True
 
-            # Try to get data, if fails change "veml" variable
+            # Try to get data from the light sensor
             
             try:
                 #val = veml7700.light #easier lux value
                 val = getLux()
-            except Exception as e:
+            except RuntimeError as e:
                 print("failed val assignment:\n ", e)
-                veml = False
-            if val < 0:
-                print("failed to get info")
-                veml = False
-            
-            #if it disconnects midway then we can try to do it again?
-            #if not veml:
-            #    veml7700 = loadVEML()
-            
-            # we're just gonna send lux before trying to do anything temp related.
-            if veml:
+            else:
                 if connected:
-                    sendLux(write_api, val)
-
+                    try:
+                        print(val)
+                        sendLux(write_api, val)
+                    except Exception as e:
+                        print(e)
+                        flash_red()
                 else:
                     luxWriter.writerow([datetime.utcnow(), val])
-
-            else: #lux sensor isn't working, we aren't sending anything
-                flash_red()
-            
+                
             # Send "read" command to the pt-1000
             
             if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
@@ -382,7 +373,7 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    #print(lines)
+                    print(lines)
                     float(lines[0].decode("utf-8"))
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
@@ -392,15 +383,16 @@ def main():
                     flash_red()
                 except ValueError: #String was sent instead of float.
                     print("cannot cast data as float; Not sending temp")
+                    flash_red()
                 else:
                     try:
                         lines[0].decode("utf-8")
                     except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
                         print("garbage was sent and cannot be decoded!")
                         flash_red()
-                    if not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
-                        print("expected float but got string; Not sending temp")
-                        flash_red()
+                    #if not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
+                    #    print("expected float but got string; Not sending temp")
+                    #    flash_red()
                     else:
                         if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
                             print("status message, skipping")
@@ -417,7 +409,7 @@ def main():
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
 
-            time.sleep(1)
+            time.sleep(3)
 
     except KeyboardInterrupt:
         print("\n\nExiting loop and clearing data")
