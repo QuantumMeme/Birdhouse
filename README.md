@@ -24,7 +24,7 @@ Make sure to clone this repo to desktop!
     ```
 6. Now compile `getlight.c` using the following
     ```bash
-    gcc -o getlight.c -o getlight -l bcm2835
+    gcc getlight.c -o getlight -l bcm2835
     ```
 
 7. In order to make sure that we stay connected to the internet, we will create a little script to ensure that for us. Let's created it with the following command:
