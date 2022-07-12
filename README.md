@@ -47,6 +47,7 @@ Make sure to clone this repo to desktop!
 10. Now we have to make both of these run on startup. Open the crontab file by doing the command `crontab -e`. If it's your first time using it, use selection 1 (nano is the easiest to work with)
 11. Add the following lines to the bottom. The first runs the sensing program on boot, the second checks for internet connection every 5 minutes.
     `@reboot sleep 45; python3 /home/pi/Desktop/Birdhouse/call.py`
+    
     `*/5 * * * * /usr/bin/sudo -H /usr/local/bin/wificheck.sh >> /dev/null 2>&1`
 12. Press `ctrl+x` followed by `enter` followed by `enter`
 13. Add data directory with `mkdir data` in the main folder
