@@ -1,85 +1,53 @@
-'''
-Each circle represents an unused pin.
-Each other symbol represents a used one and what it's used by
-
-Use this as a reference: https://pinout.xyz/
-
-> - a green LED as an indicator light.
-< - a blue LED as an indicator light
-
-X - PT-1000 Temperature Sensor
-    TX  -> RXD
-    RX  -> TXD
-    VCC -> 5V
-    GND -> GND
-
-Z - PmodALS Lux Sensor
-    VCC -> 3V3
-    GND -> GND
-    SCK -> SCLK
-    SDO -> MISO
-    NC  -> nothing
-    CS  -> CE0
-
-3V3 power       ZX    5V power
-                OO
-                OO
-                OX    TXD
-                OX    RXD
-                OO
-                OX    GND
-                OO
-                OO
-                O<    GND
-MISO            ZO
-SCLK            ZZ    CE1
-GND             ZO
-                OO
-                OO
-                OO
-                OO
-                OO
-GPIO 26         >O
-GND             ><    GPIO 21
-
-
-'''
-
-
-
-
-#communication
 import serial
 from serial import SerialException
 import board
-import subprocess, os
+import subprocess
 import socket
+#import pandas as pd
 #import adafruit_veml7700
 
-import csv
+import json
 import sys
 import time
 from datetime import datetime
 import atexit
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
+#from influxdb import InfluxDBClient
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-import RPi.GPIO as GPIO
 from pijuice import PiJuice
-
-
+import RPi.GPIO as GPIO
 
 #global flags
 veml = True
 pt1000 = False
 connected = False
-birdhouseID = "bh0" #change for different point on influx
+birdhouseID = "bh2" #change for different point on influx
 
+#influx variables
+token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
+org = "david.pesin@gmail.com"
+bucket = "david.pesin's Bucket"
 
 def clean(): # this is defined for atExit.
     GPIO.cleanup()
     print("GPIO unallocated")
+
+# You can change the GPIO pins if you want for the LEDs
+# https://pinout.xyz/ to help you out there.
+def flash_green(stayOn = 0): 
+    GPIO.output(26, GPIO.HIGH)
+    time.sleep(0.1)
+    if stayOn == 0:
+        GPIO.output(26, GPIO.LOW)
+        time.sleep(0.1)
+def flash_red(stayOn = 0):
+    GPIO.output(21, GPIO.HIGH)
+    time.sleep(0.1)
+    if stayOn == 0:
+        GPIO.output(21, GPIO.LOW)
+        time.sleep(0.1)
 
 # following functions are taken straight from AtlasScientific's github repo. Same for their UART implementation
 # https://github.com/AtlasScientific/Raspberry-Pi-sample-code 
@@ -131,96 +99,6 @@ def read_lines(pt1000):
 		print( "Error, ", e)
 		return None	
 
-
-# You can change the GPIO pins if you want for the LEDs
-# https://pinout.xyz/ to help you out there.
-def flash_green(stayOn = 0): 
-    GPIO.output(26, GPIO.HIGH)
-    time.sleep(0.1)
-    if stayOn == 0:
-        GPIO.output(26, GPIO.LOW)
-        time.sleep(0.1)
-def flash_red(stayOn = 0):
-    GPIO.output(21, GPIO.HIGH)
-    time.sleep(0.1)
-    if stayOn == 0:
-        GPIO.output(21, GPIO.LOW)
-        time.sleep(0.1)
-
-#InfluxDB definitions
-
-token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
-org = "david.pesin@gmail.com"
-bucket = "david.pesin's Bucket"
-
-def sendLux(influx_client, value): # Sending lux.
-    global connected
-    point = Point("birdhouse") \
-        .tag("bhID", birdhouseID) \
-        .field("lux", value) \
-        .time(datetime.utcnow(), WritePrecision.NS)
-    try: 
-        influx_client.write(bucket, org, point)
-    except Exception as e:
-        print(e)
-        for i in range(4):
-            flash_red()
-        connected = False
-    else:
-        flash_green()
-        #print(value)
-
-def sendTemp(influx_client, valueBytes): #Sending first 7 digits (including the period) of the bytes received.
-    global connected
-    val = float(valueBytes[0][:6].decode('utf-8'))
-
-    point = Point("birdhouse") \
-            .tag("bhID", birdhouseID) \
-            .field("tmp", val)\
-            .time(datetime.utcnow(), WritePrecision.NS)
-    try:
-        influx_client.write(bucket, org, point)
-    except Exception as e:
-        print(e)
-        for i in range(4):
-            flash_red()
-        connected = False
-    else:
-        flash_green()
-        #print(val)
-
-#setup and sending is done simultaneously in the C program
-def getLux():
-    #light = subprocess.run(['sudo', '/home/pi/Desktop/Birdhouse/getlight'], capture_output = True, text = True)
-    #print("val: ", light.stdout)
-    light = os.popen('/usr/bin/sudo /home/pi/Desktop/Birdhouse/getLight')
-    try:
-        value = int(light.read()[:4],16)
-    except ValueError:
-        print("something wrong was sent")
-        flash_red()
-        raise RuntimeError("Value Error")
-    else:
-        return value
-
-# Hardware setup functions
-
-
-# THIS IS FOR THE OLD LUX SENSOR
-def loadVEML(): # returning the veml object to be able to get data from it later
-    global veml
-    try:
-        i2c = board.I2C()  # uses board.SCL and board.SDA -- This won't throw any error, it's just using constants 'board' has stored
-        obj = adafruit_veml7700.VEML7700(i2c)
-    except RuntimeError:
-        print("Unable to enable VEML7700")
-    except Exception as e: # This is SUPER bad practice, just to catch stuff during testing to find out what exceptions can be thrown
-        print("Unknown Error, \n", e)
-    else:
-        veml = True
-        print("done!")
-        return obj
-
 def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the temperature probe. Defaulting to the tx/rx pins, can change according to your needs though
     global pt1000
     try:
@@ -234,6 +112,28 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
         ser.flush() # Clear prior data
         print("done!")
         return ser
+
+#setup and sending is done simultaneously in the C program
+def getLux():
+    light = subprocess.run(['sudo', '/home/asc/Desktop/Birdhouse/getlight'], capture_output = True, text = True)
+    print("val: ", light.stdout)
+    try:
+        value = int(light.stdout[:4],16)
+    except ValueError:
+        print("something wrong was sent")
+        flash_red()
+        raise RuntimeError("Value Error")
+    if len(light.stderr) > 1:
+        print("firmware issue?")
+        raise RuntimeError("Firmware Error")
+    else:
+        return value
+
+def disconnect():
+    retcode = subprocess.run(['sudo', 'ifconfig', 'wlan0', 'down'])
+def reconnect():
+    retcode = subprocess.run(['sudo', 'ifconfig', 'wlan0', 'up'])
+
 def influxSetup():
     global connected
     try:
@@ -251,6 +151,11 @@ def influxSetup():
         connected = True
         return write_api
 
+def get_size(fileobject):
+    fileobject.seek(0,2) # move the cursor to the end of the file
+    size = fileobject.tell()
+    return size
+
 def isConnected():
   try:
     # see if we can resolve the host name -- tells us if there is
@@ -264,33 +169,19 @@ def isConnected():
      pass # we ignore any errors, returning False
   return False
 
-def sendBatData(pijuice, influx_client):
+def getBatData(pijuice):
     charge = pijuice.status.GetChargeLevel()["data"]
     temp = pijuice.status.GetBatteryTemperature()["data"]
     voltage = pijuice.status.GetBatteryVoltage()["data"]
     current = pijuice.status.GetBatteryCurrent()["data"]
-    
+    return charge, temp, voltage, current
 
-    point = Point("birdhouse") \
-            .tag("bhID", birdhouseID) \
-            .field("batTmp", temp)\
-            .field("batCharge", charge)\
-            .field("batVolt", voltage)\
-            .field("batCurrent", current)\
-            .time(datetime.utcnow(), WritePrecision.NS)
-    try:
-        influx_client.write(bucket, org, point)
-    except Exception as e:
-        print(e)
-        for i in range(4):
-            flash_red()
-        connected = False
-    else:
-        flash_green()   
-    
-    
 def main():
+    reconnect()
+    time.sleep(10)
     global veml, pt1000, connected
+
+
     #when the program terminates we will clean up GPIO stuff.
     atexit.register(clean)
 
@@ -302,15 +193,6 @@ def main():
     GPIO.setup(21, GPIO.OUT, initial = GPIO.LOW)
 
     pj = PiJuice(1, 0x14) #Instantiate pijuice object
-
-    #opening CSV writers
-    file1 = open('/home/pi/Desktop/Birdhouse/data/temp.csv', 'w')
-    file2 = open('/home/pi/Desktop/Birdhouse/data/lux.csv', 'w')
-    tempWriter = csv.writer(file1)
-    luxWriter = csv.writer(file2)
-
-    tempWriter.writerow(['datetime','temp']) # header
-    luxWriter.writerow(['datetime','lux'])
 
     #variables will change depending on if the device is on
 
@@ -359,35 +241,39 @@ def main():
     write_api = influxSetup()
     print("done!")
     time.sleep(1)
-      
-    try:
-        while True:
 
-            # Check connection status.
-            if not connected:
-                if isConnected():
-                    connected = True
+    while True:
+        disconnect()
+        start_time = time.time()
 
-            # Try to get data from the light sensor
-            
+        tempfile = open('/home/asc/Desktop/Birdhouse/data/temp.json', 'w')
+        luxfile = open('/home/asc/Desktop/Birdhouse/data/lux.json', 'w')
+        batfile = open('/home/asc/Desktop/Birdhouse/data/bat.json', 'w')
+
+        luxfile.write("[")
+        tempfile.write("[")
+        luxnum = 0
+        batnum = 0
+        tempnum = 0
+        while (time.time() - start_time) <= 3600:
             try:
                 #val = veml7700.light #easier lux value
                 val = getLux()
             except RuntimeError as e:
                 print("failed val assignment:\n ", e)
             else:
-                if connected:
-                    try:
-                        print(val)
-                        sendLux(write_api, val)
-                    except Exception as e:
-                        print(e)
-                        flash_red()
-                else:
-                    luxWriter.writerow([datetime.utcnow(), val])
-                
-            # Send "read" command to the pt-1000
-            
+                if luxnum  > 0:
+                    luxfile.write(",\n")
+                luxdict = {
+                    "measurement":"birdhouse",
+                    "tags": {"bhID":birdhouseID},
+                    "fields": {"lux":val},
+                    "time":time.time_ns()
+                    }
+                luxjson = json.dumps(luxdict)
+                luxfile.write(luxjson)
+                luxnum += 1
+
             if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
                 ser = loadPT1000()            
             try:
@@ -400,7 +286,7 @@ def main():
             #Checking results and sending temp
             if pt1000:
                 try:
-                    print(lines)
+                    print(lines[0])
                     float(lines[0].decode("utf-8"))
                 except IndexError: #Nothing was sent
                     print("nothing sent; Not sending temp")
@@ -428,22 +314,65 @@ def main():
                             print("the thermometer is disconnected, or connected improperly")
                             flash_red()
                         else:
-                            if connected:
-                                sendTemp(write_api, lines)
-                            else:
-                                tempWriter.writerow([datetime.utcnow(), float(lines[0][:6].decode("utf-8"))])
-
+                            if tempnum > 0:
+                                tempfile.write(",\n")
+                            tempdict = {
+                                "measurement":"birdhouse",
+                                "tags": {"bhID":birdhouseID},
+                                "fields": {"tmp":float(lines[0][:6].decode("utf-8"))},
+                                "time":time.time_ns()
+                                }
+                            tempjson = json.dumps(tempdict)
+                            tempfile.write(tempjson)
+                            tempnum += 1
+                        time.sleep(3)
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
-            if connected:
-                sendBatData(pj, write_api)
+
+            if batnum > 0:
+                    batfile.write(",\n")
+            charge, tmp, voltage, current = getBatData(pj)
+            batdict = {
+                "measurement":"birdhouse",
+                "tags": {"bhID":birdhouseID},
+                "fields": {"batTmp":tmp, "batCharge":charge, "batVolt":voltage, "batCurrent":current},
+                "time":time.time_ns()                
+            }
+
+            batjson = json.dumps(batdict)
+            batfile.write(batjson)
+            batnum += 1
+
+
+        else:
+            reconnect()
+            while not isConnected():
+                flash_red()
+            flash_green(1)
+            time.sleep(10)
+            write_api = influxSetup()
+            #luxsize = get_size(luxfile)
+            #luxfile.truncate(luxsize - 2)
+
+            #tempsize = get_size(tempfile)
+            #tempfile.truncate(tempsize - 2)
+            luxfile.write("]")
+            tempfile.write("]")
+
+            luxfile.close()
+            tempfile.close()
+            
+            with open('/home/asc/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
+                finallux  = json.load(f)
+            with open('/home/asc/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
+                finaltemp = json.load(f)
+
+            write_api.write(bucket, org, finallux, record_time_key="time")
+            flash_green()
+            write_api.write(bucket, org, finaltemp, record_time_key="time")
+            flash_green()
             time.sleep(3)
-
-    except KeyboardInterrupt:
-        print("\n\nExiting loop and clearing data")
-        ser.flush()
-        sys.exit()
-
+            print("sent!")
 
 if __name__ == "__main__":
     main()
