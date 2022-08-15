@@ -1,7 +1,7 @@
 import serial
 from serial import SerialException
 import board
-import subprocess
+import subprocess, os
 import socket
 #import pandas as pd
 #import adafruit_veml7700
@@ -23,7 +23,7 @@ import RPi.GPIO as GPIO
 veml = True
 pt1000 = False
 connected = False
-birdhouseID = "bh2" #change for different point on influx
+birdhouseID = "bh0" #change for different point on influx
 
 #influx variables
 token = "nyAWc7MpHrEuB0cKpUdG5aY6DEvJgiVYcQakKGsq-UNavSiv_krD1NvYik9rH0LFsYC6uz1FBwWQoiyn-us0ag=="
@@ -115,24 +115,22 @@ def loadPT1000(uart_addr = '/dev/ttyS0'): # returning the serial object of the t
 
 #setup and sending is done simultaneously in the C program
 def getLux():
-    light = subprocess.run(['sudo', '/home/asc/Desktop/Birdhouse/getlight'], capture_output = True, text = True)
-    print("val: ", light.stdout)
+    #light = subprocess.run(['sudo', '/home/pi/Desktop/Birdhouse/getlight'], capture_output = True, text = True)
+    #print("val: ", light.stdout)
+    light = os.popen('/usr/bin/sudo /home/pi/Desktop/Birdhouse/getLight')
     try:
-        value = int(light.stdout[:4],16)
+        value = int(light.read()[:4],16)
     except ValueError:
         print("something wrong was sent")
         flash_red()
         raise RuntimeError("Value Error")
-    if len(light.stderr) > 1:
-        print("firmware issue?")
-        raise RuntimeError("Firmware Error")
     else:
         return value
 
 def disconnect():
-    retcode = subprocess.run(['sudo', 'ifconfig', 'wlan0', 'down'])
+    retcode = os.popen('sudo ifconfig wlan0 down')
 def reconnect():
-    retcode = subprocess.run(['sudo', 'ifconfig', 'wlan0', 'up'])
+    retcode = os.popen('sudo ifconfig wlan0 up')
 
 def influxSetup():
     global connected
@@ -175,6 +173,22 @@ def getBatData(pijuice):
     voltage = pijuice.status.GetBatteryVoltage()["data"]
     current = pijuice.status.GetBatteryCurrent()["data"]
     return charge, temp, voltage, current
+
+def writeJson(file, fields, values, comma):
+    global birdhouseID
+    if comma > 0:
+        file.write(",\n")
+    filedict = {
+        "measurement":"birdhouse",
+        "tags": {"bhID":birdhouseID},
+        "fields":{},
+        "time":time.time_ns()
+        }
+    for i in range(len(fields)):
+        filedict["fields"][fields[i]] = values[i]
+
+    tempjson = json.dumps(filedict)
+    file.write(tempjson)
 
 def main():
     reconnect()
@@ -246,15 +260,18 @@ def main():
         disconnect()
         start_time = time.time()
 
-        tempfile = open('/home/asc/Desktop/Birdhouse/data/temp.json', 'w')
-        luxfile = open('/home/asc/Desktop/Birdhouse/data/lux.json', 'w')
-        batfile = open('/home/asc/Desktop/Birdhouse/data/bat.json', 'w')
+        tempfile = open('/home/pi/Desktop/Birdhouse/data/temp.json', 'w')
+        luxfile = open('/home/pi/Desktop/Birdhouse/data/lux.json', 'w')
+        batfile = open('/home/pi/Desktop/Birdhouse/data/bat.json', 'w')
 
         luxfile.write("[")
         tempfile.write("[")
+        batfile.write("[")
+
         luxnum = 0
         batnum = 0
         tempnum = 0
+        
         while (time.time() - start_time) <= 3600:
             try:
                 #val = veml7700.light #easier lux value
@@ -262,16 +279,7 @@ def main():
             except RuntimeError as e:
                 print("failed val assignment:\n ", e)
             else:
-                if luxnum  > 0:
-                    luxfile.write(",\n")
-                luxdict = {
-                    "measurement":"birdhouse",
-                    "tags": {"bhID":birdhouseID},
-                    "fields": {"lux":val},
-                    "time":time.time_ns()
-                    }
-                luxjson = json.dumps(luxdict)
-                luxfile.write(luxjson)
+                writeJson(luxfile,["lux"], [val], luxnum)
                 luxnum += 1
 
             if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
@@ -314,33 +322,14 @@ def main():
                             print("the thermometer is disconnected, or connected improperly")
                             flash_red()
                         else:
-                            if tempnum > 0:
-                                tempfile.write(",\n")
-                            tempdict = {
-                                "measurement":"birdhouse",
-                                "tags": {"bhID":birdhouseID},
-                                "fields": {"tmp":float(lines[0][:6].decode("utf-8"))},
-                                "time":time.time_ns()
-                                }
-                            tempjson = json.dumps(tempdict)
-                            tempfile.write(tempjson)
+                            writeJson(tempfile, ["tmp"], [float(lines[0][:6].decode("utf-8"))], tempnum)
                             tempnum += 1
                         time.sleep(3)
             else: # try to connect to the thermometer again
                 ser = loadPT1000()
 
-            if batnum > 0:
-                    batfile.write(",\n")
             charge, tmp, voltage, current = getBatData(pj)
-            batdict = {
-                "measurement":"birdhouse",
-                "tags": {"bhID":birdhouseID},
-                "fields": {"batTmp":tmp, "batCharge":charge, "batVolt":voltage, "batCurrent":current},
-                "time":time.time_ns()                
-            }
-
-            batjson = json.dumps(batdict)
-            batfile.write(batjson)
+            writeJson(batfile, ["batTmp", "batCharge", "batVolt", "batCurrent"], [tmp, charge, voltage, current], batnum)
             batnum += 1
 
 
@@ -351,33 +340,29 @@ def main():
             flash_green(1)
             time.sleep(10)
             write_api = influxSetup()
-            #luxsize = get_size(luxfile)
-            #luxfile.truncate(luxsize - 2)
 
-            #tempsize = get_size(tempfile)
-            #tempfile.truncate(tempsize - 2)
             luxfile.write("]")
             tempfile.write("]")
-	    batfile.write("]")
+            batfile.write("]")
 
             luxfile.close()
             tempfile.close()
-	    batfile.close()
+            batfile.close()
             
-            with open('/home/asc/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
+            with open('/home/pi/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
                 finallux  = json.load(f)
-            with open('/home/asc/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
+            with open('/home/pi/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
                 finaltemp = json.load(f)
-	    with open('/home/asc/Desktop/Birdhouse/data/bat.json', 'r', encoding = "utf-8") as f:
-		finalbat = json.load(f)
+            with open('/home/pi/Desktop/Birdhouse/data/bat.json', 'r', encoding = "utf-8") as f:
+                finalbat = json.load(f)
 		
 
             write_api.write(bucket, org, finallux, record_time_key="time")
             flash_green()
             write_api.write(bucket, org, finaltemp, record_time_key="time")
             flash_green()
-	    write_api.write(bucket, org, finalbat, record_time_key="time")
-	    flash_green()
+            write_api.write(bucket, org, finalbat, record_time_key="time")
+            flash_green()
 
             time.sleep(3)
             print("sent!")
