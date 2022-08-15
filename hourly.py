@@ -190,6 +190,45 @@ def writeJson(file, fields, values, comma):
     tempjson = json.dumps(filedict)
     file.write(tempjson)
 
+def sendJson(file1, file2, file3, write_api):
+    reconnect()
+    connecttime = time.time()
+    while not isConnected():
+        if time.time() - connecttime <= 600:
+            flash_red()
+        else:
+            return -1
+    flash_green(1)
+    time.sleep(10)
+    write_api = influxSetup()
+
+    file1.write("]")
+    file2.write("]")
+    file3.write("]")
+
+    file1.close()
+    file2.close()
+    file3.close()
+    
+    with open('/home/pi/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
+        finallux  = json.load(f)
+    with open('/home/pi/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
+        finaltemp = json.load(f)
+    with open('/home/pi/Desktop/Birdhouse/data/bat.json', 'r', encoding = "utf-8") as f:
+        finalbat = json.load(f)
+
+
+    write_api.write(bucket, org, finallux, record_time_key="time")
+    flash_green()
+    write_api.write(bucket, org, finaltemp, record_time_key="time")
+    flash_green()
+    write_api.write(bucket, org, finalbat, record_time_key="time")
+    flash_green()
+
+    time.sleep(3)
+    print("sent!")
+    return 0
+
 def main():
     reconnect()
     time.sleep(10)
@@ -257,9 +296,8 @@ def main():
     time.sleep(1)
 
     while True:
-        disconnect()
-        start_time = time.time()
-
+        #whether or not to continue writing to the same file
+        cont = True
         tempfile = open('/home/pi/Desktop/Birdhouse/data/temp.json', 'w')
         luxfile = open('/home/pi/Desktop/Birdhouse/data/lux.json', 'w')
         batfile = open('/home/pi/Desktop/Birdhouse/data/bat.json', 'w')
@@ -271,101 +309,74 @@ def main():
         luxnum = 0
         batnum = 0
         tempnum = 0
-        
-        while (time.time() - start_time) <= 3600:
-            try:
-                #val = veml7700.light #easier lux value
-                val = getLux()
-            except RuntimeError as e:
-                print("failed val assignment:\n ", e)
-            else:
-                writeJson(luxfile,["lux"], [val], luxnum)
-                luxnum += 1
 
-            if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
-                ser = loadPT1000()            
-            try:
-                send_cmd("R", ser) #send commands
-                lines = read_lines(ser) #read results
-            except Exception as e: # probably SerialException but unsure if that's the only one. Need to keep testing
-                print(e)
-                pt1000 = False 
-
-            #Checking results and sending temp
-            if pt1000:
-                try:
-                    print(lines[0])
-                    float(lines[0].decode("utf-8"))
-                except IndexError: #Nothing was sent
-                    print("nothing sent; Not sending temp")
-                    flash_red()
-                except UnicodeDecodeError: #What was sent isn't decodable
-                    print("cannot decode data; Not sending temp")
-                    flash_red()
-                except ValueError: #String was sent instead of float.
-                    print("cannot cast data as float; Not sending temp")
-                    flash_red()
-                else:
-                    try:
-                        lines[0].decode("utf-8")
-                    except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
-                        print("garbage was sent and cannot be decoded!")
-                        flash_red()
-                    #if not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
-                    #    print("expected float but got string; Not sending temp")
-                    #    flash_red()
-                    else:
-                        if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
-                            print("status message, skipping")
-                            flash_red()
-                        elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
-                            print("the thermometer is disconnected, or connected improperly")
-                            flash_red()
-                        else:
-                            writeJson(tempfile, ["tmp"], [float(lines[0][:6].decode("utf-8"))], tempnum)
-                            tempnum += 1
-                        time.sleep(3)
-            else: # try to connect to the thermometer again
-                ser = loadPT1000()
-
-            charge, tmp, voltage, current = getBatData(pj)
-            writeJson(batfile, ["batTmp", "batCharge", "batVolt", "batCurrent"], [tmp, charge, voltage, current], batnum)
-            batnum += 1
-
-
-        else:
-            reconnect()
-            while not isConnected():
-                flash_red()
-            flash_green(1)
-            time.sleep(10)
-            write_api = influxSetup()
-
-            luxfile.write("]")
-            tempfile.write("]")
-            batfile.write("]")
-
-            luxfile.close()
-            tempfile.close()
-            batfile.close()
+        while cont == True:
+            disconnect()
+            start_time = time.time()
             
-            with open('/home/pi/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
-                finallux  = json.load(f)
-            with open('/home/pi/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
-                finaltemp = json.load(f)
-            with open('/home/pi/Desktop/Birdhouse/data/bat.json', 'r', encoding = "utf-8") as f:
-                finalbat = json.load(f)
-		
+            while (time.time() - start_time) <= 3600:
+                try:
+                    #val = veml7700.light #easier lux value
+                    val = getLux()
+                except RuntimeError as e:
+                    print("failed val assignment:\n ", e)
+                else:
+                    writeJson(luxfile,["lux"], [val], luxnum)
+                    luxnum += 1
 
-            write_api.write(bucket, org, finallux, record_time_key="time")
-            flash_green()
-            write_api.write(bucket, org, finaltemp, record_time_key="time")
-            flash_green()
-            write_api.write(bucket, org, finalbat, record_time_key="time")
-            flash_green()
+                if not pt1000: #This will usually not fix it, if it's a serial issue there's something wrong with the RPi's setup
+                    ser = loadPT1000()            
+                try:
+                    send_cmd("R", ser) #send commands
+                    lines = read_lines(ser) #read results
+                except Exception as e: # probably SerialException but unsure if that's the only one. Need to keep testing
+                    print(e)
+                    pt1000 = False 
 
-            time.sleep(3)
-            print("sent!")
+                #Checking results and sending temp
+                if pt1000:
+                    try:
+                        print(lines[0])
+                        float(lines[0].decode("utf-8"))
+                    except IndexError: #Nothing was sent
+                        print("nothing sent; Not sending temp")
+                        flash_red()
+                    except UnicodeDecodeError: #What was sent isn't decodable
+                        print("cannot decode data; Not sending temp")
+                        flash_red()
+                    except ValueError: #String was sent instead of float.
+                        print("cannot cast data as float; Not sending temp")
+                        flash_red()
+                    else:
+                        try:
+                            lines[0].decode("utf-8")
+                        except UnicodeDecodeError: # for some reason this isn't caught in the first part sometimes.
+                            print("garbage was sent and cannot be decoded!")
+                            flash_red()
+                        #if not str(lines[0][0]).isdigit() and not str(lines[0][1]).isdigit(): #What was sent isn't a number.
+                        #    print("expected float but got string; Not sending temp")
+                        #    flash_red()
+                        else:
+                            if lines[0][0] == b'*'[0]: #Checking for status messages, sometimes the first message is going to be one.
+                                print("status message, skipping")
+                                flash_red()
+                            elif float(lines[0][:6].decode("utf-8")) < -1000 or float(lines[0][:6].decode("utf-8")) > 100: #Checking for erroneous response. throws -1023 degrees or obscenely hot temps if not connected properly
+                                print("the thermometer is disconnected, or connected improperly")
+                                flash_red()
+                            else:
+                                writeJson(tempfile, ["tmp"], [float(lines[0][:6].decode("utf-8"))], tempnum)
+                                tempnum += 1
+                            time.sleep(3)
+                else: # try to connect to the thermometer again
+                    ser = loadPT1000()
+
+                charge, tmp, voltage, current = getBatData(pj)
+                writeJson(batfile, ["batTmp", "batCharge", "batVolt", "batCurrent"], [tmp, charge, voltage, current], batnum)
+                batnum += 1
+            else:
+                retcode = sendJson(luxfile, tempfile, batfile, write_api)
+                if retcode == 0:
+                    cont = False
 
 if __name__ == "__main__":
     main()
