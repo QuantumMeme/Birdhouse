@@ -358,19 +358,27 @@ def main():
             #tempfile.truncate(tempsize - 2)
             luxfile.write("]")
             tempfile.write("]")
+	    batfile.write("]")
 
             luxfile.close()
             tempfile.close()
+	    batfile.close()
             
             with open('/home/asc/Desktop/Birdhouse/data/lux.json', 'r', encoding = "utf-8") as f:
                 finallux  = json.load(f)
             with open('/home/asc/Desktop/Birdhouse/data/temp.json', 'r', encoding = "utf-8") as f:
                 finaltemp = json.load(f)
+	    with open('/home/asc/Desktop/Birdhouse/data/bat.json', 'r', encoding = "utf-8") as f:
+		finalbat = json.load(f)
+		
 
             write_api.write(bucket, org, finallux, record_time_key="time")
             flash_green()
             write_api.write(bucket, org, finaltemp, record_time_key="time")
             flash_green()
+	    write_api.write(bucket, org, finalbat, record_time_key="time")
+	    flash_green()
+
             time.sleep(3)
             print("sent!")
 
